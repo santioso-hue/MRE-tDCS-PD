@@ -63,11 +63,14 @@ Sub-steps:
 6. `vecreg` eigenvectors to T1 space (rotation-corrected)
 
 **Why dps.mat instead of dtd_covariance_C_mu.nii.gz?**
-The covariance-model NIfTI has NaN outside the QTI mask. FLIRT trilinear
-interpolation spreads NaN into the brain region (range blows up to ±10,000+).
-`dps.mat.ufa` and `dps.mat.MD` are zero outside the mask → safe for interpolation.
-The DPS estimator of μFA is related to but distinct from the covariance estimator.
-This distinction should be documented in methods.
+The issue is NOT NaN values outside the mask — those are zero and safe for
+interpolation. The actual failure is within the brain mask: 24.3% of brain voxels
+contain non-physical extreme values (range −23,653 to +13,774; mean = 26.0),
+caused by covariance model instability from sparse QTI sampling (38 volumes, pilot
+protocol). After clipping to [0, 1], Pearson r between the covariance estimate and
+`dps.ufa` is only 0.26 — confirming they produce different estimates. This is a
+data-insufficiency problem, not fixable by masking. `dps.ufa` is the only
+physically valid μFA estimate for this pilot dataset.
 
 ### Step 2 — Build conductivity tensor
 ```bash
@@ -131,21 +134,43 @@ Registration QC (FullPD5 pilot):
 
 ---
 
+## Known Limitations
+
+### Eddy Current Correction (DTI)
+Cannot be applied because only 1 b=0 volume was acquired in the DTI series
+(series 801: 1 b=0 + 80 b=1500, MB3) and no reversed phase-encoding b=0 was
+collected to enable topup susceptibility correction. Motion correction only could
+be added via `mcflirt`. The full study acquisition protocol should include a
+reversed-PE b=0 pair to enable both topup and eddy correction via `eddy_openmp`.
+
+### Prolate Approximation Error
+DTI data for FullPD5 shows λ₂/λ₃ mean = 1.32 (24% fractional asymmetry), meaning
+the prolate approximation (λ₂ = λ₃) introduces ~12% error in perpendicular
+conductivity per voxel on average. Can be addressed via a hybrid model: set λ₁
+from the QTI μFA formula, then split λ₂/λ₃ from DTI eigenvector decomposition,
+combining all three eigenvectors. Not implemented for this pilot.
+
+---
+
 ## Key Scientific Decisions & Open Questions
 
 1. **DPS μFA vs. covariance μFA**: We use `dps.ufa` (DPS estimator) instead of
-   `dtd_covariance_C_mu.nii.gz` (covariance estimator). Both estimate microscopic
-   anisotropy but via different models. Methods section should clarify which
-   estimator was used and why.
+   `dtd_covariance_C_mu.nii.gz` (covariance estimator). The covariance estimator
+   is unstable for this pilot's sparse QTI sampling (38 volumes): 24.3% of brain
+   voxels contain non-physical values; Pearson r with `dps.ufa` = 0.26 after
+   clipping to [0, 1]. `dps.ufa` is the only physically valid μFA estimate.
+   Methods must specify the DPS estimator explicitly.
 
 2. **Prolate approximation**: Only the principal eigenvector v₁ is available from
    `dps.mat` (the full mean diffusion tensor components are zero in this pilot).
-   The prolate approximation (λ₂=λ₃) assumes axial symmetry around v₁, which
-   is standard for WM fiber tracts but ignores planar diffusion components.
+   The prolate approximation (λ₂=λ₃) assumes axial symmetry around v₁. DTI data
+   shows λ₂/λ₃ mean = 1.32 (24% fractional asymmetry), giving ~12% error in
+   perpendicular conductivity per voxel on average. See Known Limitations for the
+   hybrid-model fix.
 
-3. **Eddy current correction skipped (DTI)**: `dwi2cond` crashed on single-b0
-   data. The bypass (direct dtifit) skips eddy correction. For quantitative
-   comparison, a proper eddy-corrected DTI is preferred.
+3. **Eddy current correction skipped (DTI)**: Cannot be applied — only 1 b=0
+   volume acquired, no reversed-PE b=0 for topup. Motion correction only could be
+   added via `mcflirt`. See Known Limitations.
 
 4. **Unit consistency**: MD-dMRI tensor values are in μm²/ms; DTI tensor (from
    dtifit) is in mm²/s. SimNIBS `vn` normalization is scale-invariant so this
