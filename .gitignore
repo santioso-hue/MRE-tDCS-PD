@@ -1,0 +1,59 @@
+# ── Nested git repos (already versioned separately) ──────────────────────────
+tDCS-head-model/
+
+# ── Large subject data directories ────────────────────────────────────────────
+# These contain NIfTIs, meshes, and logs — too large for git, use DVC or paths doc
+FullPD5_segmentation/
+sub04_segmentation/
+charm_ernie/
+
+# ── Papers / literature ───────────────────────────────────────────────────────
+papers/
+
+# ── Claude working files ──────────────────────────────────────────────────────
+CLAUDE.md
+
+# ── Large binary/data file types ──────────────────────────────────────────────
+*.nii
+*.nii.gz
+*.msh
+*.msh.opt
+*.mat
+*.npz
+*.h5
+*.hdf5
+
+# ── SimNIBS outputs ────────────────────────────────────────────────────────────
+*.geo
+*.pos
+
+# ── FSL outputs ───────────────────────────────────────────────────────────────
+*.log
+
+# ── macOS ─────────────────────────────────────────────────────────────────────
+.DS_Store
+.AppleDouble
+.LSOverride
+__MACOSX/
+
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+*.egg-info/
+dist/
+build/
+venv/
+.env
+
+# ── Jupyter ───────────────────────────────────────────────────────────────────
+.ipynb_checkpoints/
+
+# ── Editor ────────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
