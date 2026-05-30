@@ -3,11 +3,21 @@
 
 Called automatically by 01_register_dMRI_to_T1.sh (Step 3).
 
-WHY: dtd_covariance_C_mu.nii.gz and dtd_covariance_MD.nii.gz from the QTI fit
-contain NaN outside the brain mask. FSL trilinear interpolation propagates NaN
-into the brain region, corrupting the C_mu_T1 and MD_T1 maps. The DPS model
-fields in dps.mat (ufa, MD) are clean: valid values within the mask,
-identically zero outside. These are safe for FLIRT interpolation.
+WHY: dtd_covariance_C_mu.nii.gz has zeros outside the brain mask (safe for FLIRT),
+but 24.3% of BRAIN voxels have non-physical extreme values (range -23,653 to
++13,774 within mask; mean = 26.0 vs expected 0.3-0.8). This is NOT a masking
+artifact — it is a covariance model instability caused by insufficient QTI
+encoding density (38 volumes for this pilot). The full 4th-order covariance
+tensor is underdetermined at this sampling, producing an ill-conditioned fit.
+
+The DPS model fields in dps.mat are better conditioned for sparse QTI sampling:
+  ufa [0, 0.999] within mask — physically valid throughout
+  MD  [0.005, 4.976] μm²/ms within mask — no negative values
+
+After clipping dtd_covariance_C_mu to [0,1], its Pearson correlation with
+dps.ufa is only r=0.26, confirming these are measuring substantially different
+quantities at this data quality level. Use dps.ufa as the primary μFA estimate
+for this pilot; revisit the covariance estimator for the full-study protocol.
 
 dps.mat fields used:
   .ufa   — μFA from DPS model, shape (96,96,48), float32, range [0, 1]
