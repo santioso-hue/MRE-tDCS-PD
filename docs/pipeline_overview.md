@@ -80,6 +80,13 @@ simnibs_python pipeline/02_build_conductivity_tensor.py
   - λ₁ = MD × (1 + 2·μFA / √(3 − 2·μFA²))
   - λ₂ = λ₃ = MD × (1 − μFA / √(3 − 2·μFA²))
 - Builds diffusion tensor: D = (λ₁−λ₂)·v₁v₁ᵀ + λ₂·I
+- **Whole-brain anisotropy**: applied to all brain voxels within the dMRI mask,
+  consistent with the SimNIBS `dwi2cond` standard. PD-relevant targets (SNc, SNr,
+  VTA, STN, putamen) are all grey matter — restricting anisotropy to WM would make
+  the MD-dMRI GM conductivity identical to the ISO model, defeating the comparison.
+  This also ensures validity of planned post-hoc comparison with MRE softening maps
+  (Olsson 2025) in deep GM structures. No post-hoc corrections (e.g. free-water) are
+  applied: elevated MD in SNc is a PD biomarker, not an artefact to suppress.
 - Output: `tensor_MD_dMRI.nii.gz` in FSL `dtifit --save_tensor` format
   `[Dxx, Dxy, Dxz, Dyy, Dyz, Dzz]` (upper triangle, row-major)
 
@@ -123,8 +130,13 @@ Use `caffeinate -i` for any run > 15 min to prevent macOS sleep.
 | Focality 50% (mm³) | 108,000 | 88,400 | 88,400 |
 | Solver calibration error | 2.4% | 2.4% | 2.4% |
 
-DTI = MD-dMRI at global GM percentiles — expected. Regional differences (the key
-result) require `04_extract_roi_efield.py`.
+Global GM percentiles are identical between DTI and MD-dMRI (whole-brain anisotropy).
+This is expected: VN normalization conserves total conductivity energy, and global
+percentiles are dominated by cortical GM near the electrodes. The novel contribution
+of the MD-dMRI model is in **regional** E-field differences at PD-relevant deep GM
+structures (SNc, VTA, STN, putamen) — quantified by `04_extract_roi_efield.py`.
+
+DTI ≈ ISO at global GM percentiles — expected for the same reason.
 
 Registration QC (FullPD5 pilot):
 - dMRI→T1: Rx=4.6°, Ry=−0.7°, Rz=3.0°, Tz=79.7 mm — anatomically reasonable
@@ -172,6 +184,14 @@ combining all three eigenvectors. Not implemented for this pilot.
    volume acquired, no reversed-PE b=0 for topup. Motion correction only could be
    added via `mcflirt`. See Known Limitations.
 
-4. **Unit consistency**: MD-dMRI tensor values are in μm²/ms; DTI tensor (from
+4. **Whole-brain anisotropy (MD-dMRI)**: Applied to all brain voxels within the
+   dMRI mask, consistent with SimNIBS `dwi2cond` standard. WM-only restriction
+   was considered and rejected: PD-relevant targets (SNc, SNr, VTA, STN, putamen)
+   are all GM; restricting to WM would make MD-dMRI GM conductivity identical to
+   ISO. FW correction was also rejected: elevated MD in SNc is a PD biomarker
+   (Olsson 2025), not an artefact. Post-hoc MRE comparison requires whole-brain
+   to link local conductivity changes to local MRE softening in deep GM.
+
+5. **Unit consistency**: MD-dMRI tensor values are in μm²/ms; DTI tensor (from
    dtifit) is in mm²/s. SimNIBS `vn` normalization is scale-invariant so this
    does not affect results — but document clearly in methods.

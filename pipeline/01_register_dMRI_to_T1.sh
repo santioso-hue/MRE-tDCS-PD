@@ -62,7 +62,7 @@ echo "=== Step 3: Extract clean μFA (ufa) and MD from dps.mat ==="
 echo "  Saved: C_mu_dps_dMRI.nii.gz, MD_dps_dMRI.nii.gz, dMRI_mask.nii.gz"
 
 echo ""
-echo "=== Step 4: Apply transform to C_mu, MD, and brain mask ==="
+echo "=== Step 4: Apply transform to C_mu, MD, brain mask, and signaniso ==="
 flirt -in  C_mu_dps_dMRI.nii.gz \
       -ref "$T1_REF" \
       -out C_mu_T1.nii.gz \
@@ -78,6 +78,14 @@ flirt -in  MD_dps_dMRI.nii.gz \
 flirt -in  dMRI_mask.nii.gz \
       -ref "$T1_REF" \
       -out dMRI_mask_T1.nii.gz \
+      -applyxfm -init dMRI_to_T1.mat \
+      -interp nearestneighbour
+
+# signaniso has discrete values {-1, 0, +1} — must use nearestneighbour to preserve them.
+# Trilinear would create intermediate values (e.g. -0.5) that the tensor builder cannot interpret.
+flirt -in  signaniso_dMRI.nii.gz \
+      -ref "$T1_REF" \
+      -out signaniso_T1.nii.gz \
       -applyxfm -init dMRI_to_T1.mat \
       -interp nearestneighbour
 
@@ -100,9 +108,11 @@ echo "Outputs in $WDIR/registration/:"
 echo "  dMRI_to_T1.mat        — FLIRT transform (6-DOF rigid)"
 echo "  C_mu_dps_dMRI.nii.gz  — μFA from DPS model (dMRI space, NaN-free)"
 echo "  MD_dps_dMRI.nii.gz    — MD from DPS model (dMRI space, μm²/ms, NaN-free)"
+echo "  signaniso_dMRI.nii.gz — DPS shape indicator (dMRI space, {-1,0,+1})"
 echo "  C_mu_T1.nii.gz        — μFA in T1 space"
 echo "  MD_T1.nii.gz          — MD in T1 space (μm²/ms)"
 echo "  dMRI_mask_T1.nii.gz   — Brain mask in T1 space"
+echo "  signaniso_T1.nii.gz   — DPS shape indicator in T1 space (nearestneighbour)"
 echo "  v1_T1.nii.gz          — Principal eigenvectors in T1 space (rotation-corrected)"
 echo ""
 echo "Next: run 02_build_conductivity_tensor.py"
