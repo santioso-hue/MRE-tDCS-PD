@@ -315,7 +315,7 @@ try:
 
         bp = ax.boxplot(
             data_to_plot,
-            labels=labels,
+            tick_labels=labels,
             patch_artist=True,
             medianprops=dict(color="black", linewidth=2),
             showfliers=False,
