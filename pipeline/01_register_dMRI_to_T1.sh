@@ -53,16 +53,18 @@ echo "  Registered b0:   b0_spherical_T1.nii.gz"
 echo "  VISUALLY CHECK this registration in FSLeyes before proceeding!"
 
 echo ""
-echo "=== Step 3: Extract clean μFA (ufa) and MD from dps.mat ==="
+echo "=== Step 3: Extract clean μFA (ufa), MD, ad, rd from dps.mat ==="
 # IMPORTANT: dtd_covariance_C_mu.nii.gz and dtd_covariance_MD.nii.gz have NaN
 # outside the QTI mask. FSL trilinear interpolation spreads NaN into the brain
 # region. Instead, use dps.mat fields directly: ufa [0,1] and MD [μm²/ms] are
 # already masked with zeros outside the brain mask — safe for FLIRT.
+# Also saves ad and rd (axial/radial diffusivity of mean compartment tensor)
+# for use in the σ ∝ ⟨D⟩ conductivity model.
 ~/Applications/SimNIBS-4.6/bin/simnibs_python "$WDIR/scripts/01c_save_dps_niftis.py"
-echo "  Saved: C_mu_dps_dMRI.nii.gz, MD_dps_dMRI.nii.gz, dMRI_mask.nii.gz"
+echo "  Saved: C_mu_dps_dMRI.nii.gz, MD_dps_dMRI.nii.gz, dMRI_mask.nii.gz, ad_dMRI.nii.gz, rd_dMRI.nii.gz"
 
 echo ""
-echo "=== Step 4: Apply transform to C_mu, MD, brain mask, and signaniso ==="
+echo "=== Step 4: Apply transform to C_mu, MD, brain mask, signaniso, ad, rd ==="
 flirt -in  C_mu_dps_dMRI.nii.gz \
       -ref "$T1_REF" \
       -out C_mu_T1.nii.gz \
@@ -89,6 +91,19 @@ flirt -in  signaniso_dMRI.nii.gz \
       -applyxfm -init dMRI_to_T1.mat \
       -interp nearestneighbour
 
+# ad and rd are continuous quantities — trilinear is appropriate.
+flirt -in  ad_dMRI.nii.gz \
+      -ref "$T1_REF" \
+      -out ad_T1.nii.gz \
+      -applyxfm -init dMRI_to_T1.mat \
+      -interp trilinear
+
+flirt -in  rd_dMRI.nii.gz \
+      -ref "$T1_REF" \
+      -out rd_T1.nii.gz \
+      -applyxfm -init dMRI_to_T1.mat \
+      -interp trilinear
+
 echo ""
 echo "=== Step 5: Save principal eigenvectors from dps.mat as NIfTI ==="
 ~/Applications/SimNIBS-4.6/bin/simnibs_python "$WDIR/scripts/01b_save_v1_nifti.py"
@@ -108,9 +123,13 @@ echo "Outputs in $WDIR/registration/:"
 echo "  dMRI_to_T1.mat        — FLIRT transform (6-DOF rigid)"
 echo "  C_mu_dps_dMRI.nii.gz  — μFA from DPS model (dMRI space, NaN-free)"
 echo "  MD_dps_dMRI.nii.gz    — MD from DPS model (dMRI space, μm²/ms, NaN-free)"
+echo "  ad_dMRI.nii.gz        — Axial diffusivity of ⟨D⟩ (dMRI space, μm²/ms)"
+echo "  rd_dMRI.nii.gz        — Radial diffusivity of ⟨D⟩ (dMRI space, μm²/ms)"
 echo "  signaniso_dMRI.nii.gz — DPS shape indicator (dMRI space, {-1,0,+1})"
 echo "  C_mu_T1.nii.gz        — μFA in T1 space"
 echo "  MD_T1.nii.gz          — MD in T1 space (μm²/ms)"
+echo "  ad_T1.nii.gz          — Axial diffusivity in T1 space (μm²/ms)"
+echo "  rd_T1.nii.gz          — Radial diffusivity in T1 space (μm²/ms)"
 echo "  dMRI_mask_T1.nii.gz   — Brain mask in T1 space"
 echo "  signaniso_T1.nii.gz   — DPS shape indicator in T1 space (nearestneighbour)"
 echo "  v1_T1.nii.gz          — Principal eigenvectors in T1 space (rotation-corrected)"

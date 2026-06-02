@@ -25,6 +25,11 @@ dps.mat fields used:
   .MD        — Mean diffusivity, shape (96,96,48), float32, range [0.005, 4.976] μm²/ms
   .mask      — Brain mask, shape (96,96,48), uint8
   .signaniso — Tensor shape indicator, shape (96,96,48), float64, values {-1, 0, +1}
+  .ad        — Axial diffusivity of mean compartment tensor, shape (96,96,48), float32, μm²/ms
+               Largest eigenvalue of ⟨D⟩; ad > rd universally (even oblate voxels).
+               Used with rd and u to construct σ ∝ ⟨D⟩ (orientation-dispersion-invariant).
+  .rd        — Radial diffusivity of mean compartment tensor, shape (96,96,48), float32, μm²/ms
+               Smallest eigenvalue of ⟨D⟩.
 
 Outputs (saved in registration/):
   C_mu_dps_dMRI.nii.gz      — μFA in dMRI space (NaN replaced with 0)
@@ -32,6 +37,8 @@ Outputs (saved in registration/):
   dMRI_mask.nii.gz          — Brain mask in dMRI space
   signaniso_dMRI.nii.gz     — DPS shape indicator in dMRI space (+1/−1/0)
                               Register with nearestneighbour (not trilinear) to preserve discrete values.
+  ad_dMRI.nii.gz            — Axial diffusivity in dMRI space, μm²/ms
+  rd_dMRI.nii.gz            — Radial diffusivity in dMRI space, μm²/ms
 """
 
 import numpy as np
@@ -49,13 +56,19 @@ print("Loading dps.mat...")
 mat = scipy.io.loadmat(os.path.join(FDIR, "dps.mat"))
 dps = mat['dps']  # MATLAB struct stored as (1,1) object array
 
-ufa      = dps['ufa'][0, 0].astype(np.float32)       # shape (96, 96, 48), μFA [0, 1]
-MD       = dps['MD'][0, 0].astype(np.float32)        # shape (96, 96, 48), μm²/ms
-mask     = dps['mask'][0, 0].astype(bool)            # shape (96, 96, 48)
+ufa       = dps['ufa'][0, 0].astype(np.float32)        # shape (96, 96, 48), μFA [0, 1]
+MD        = dps['MD'][0, 0].astype(np.float32)        # shape (96, 96, 48), μm²/ms
+mask      = dps['mask'][0, 0].astype(bool)            # shape (96, 96, 48)
 signaniso = dps['signaniso'][0, 0].astype(np.float32) # shape (96, 96, 48), {-1, 0, +1}
+ad        = dps['ad'][0, 0].astype(np.float32)        # shape (96, 96, 48), μm²/ms — largest eigenvalue of ⟨D⟩
+rd        = dps['rd'][0, 0].astype(np.float32)        # shape (96, 96, 48), μm²/ms — smallest eigenvalue of ⟨D⟩
 
 print(f"  ufa       (within mask): [{ufa[mask].min():.4f}, {ufa[mask].max():.4f}]")
 print(f"  MD        (within mask): [{MD[mask].min():.4f},  {MD[mask].max():.4f}] μm²/ms")
+print(f"  ad        (within mask): [{ad[mask].min():.4f},  {ad[mask].max():.4f}] μm²/ms")
+print(f"  rd        (within mask): [{rd[mask].min():.4f},  {rd[mask].max():.4f}] μm²/ms")
+n_ad_lt_rd = np.sum((ad < rd) & mask)
+print(f"  voxels where ad < rd (should be 0): {n_ad_lt_rd}")
 print(f"  mask: {mask.sum()} brain voxels")
 prolate = (signaniso > 0.5) & mask
 oblate  = (signaniso < -0.5) & mask
@@ -69,9 +82,14 @@ print(f"  signaniso (brain): {prolate.sum()} prolate (+1), {oblate.sum()} oblate
 ufa[~mask]       = 0.0
 MD[~mask]        = 0.0
 signaniso[~mask] = 0.0
+ad[~mask]        = 0.0
+rd[~mask]        = 0.0
 
 # Clip μFA to [0, 1] — should already be in range, but guard against edge voxels
 ufa = np.clip(ufa, 0.0, 1.0)
+# Clip ad ≥ rd ≥ 0 (enforce physical ordering; DPS should already satisfy this)
+ad = np.maximum(ad, 0.0)
+rd = np.clip(rd, 0.0, ad)   # rd cannot exceed ad
 
 # ── Borrow affine from dtd_covariance_C_mu.nii.gz (same dMRI space) ───────────
 ref_img = nib.load(os.path.join(FDIR, "dtd_covariance_C_mu.nii.gz"))
@@ -91,6 +109,9 @@ save_nifti(ufa,                        os.path.join(RDIR, "C_mu_dps_dMRI.nii.gz"
 save_nifti(MD,                         os.path.join(RDIR, "MD_dps_dMRI.nii.gz"),    ref_img)
 save_nifti(mask.astype(np.float32),   os.path.join(RDIR, "dMRI_mask.nii.gz"),      ref_img)
 save_nifti(signaniso,                  os.path.join(RDIR, "signaniso_dMRI.nii.gz"), ref_img)
+save_nifti(ad,                         os.path.join(RDIR, "ad_dMRI.nii.gz"),        ref_img)
+save_nifti(rd,                         os.path.join(RDIR, "rd_dMRI.nii.gz"),        ref_img)
 
 print("\nDone. Next: FLIRT will apply dMRI_to_T1.mat to these files.")
 print("  NOTE: Register signaniso with -interp nearestneighbour to preserve discrete {-1,0,+1} values.")
+print("  NOTE: ad and rd use trilinear interpolation (continuous quantities).")
