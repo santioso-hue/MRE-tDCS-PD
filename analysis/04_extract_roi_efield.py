@@ -295,7 +295,7 @@ try:
     fig.suptitle(
         "E-field magnitude (|E|) in PD-relevant ROIs — FullPD5\n"
         "Montage: C3 (anode, left M1) → Fp2 (cathode), 2 mA\n"
-        "ISO, DTI, MD-dMRI: aniso_maxcond=4 (effective ratio cap 8.0:1)",
+        "ISO, DTI (dwi2cond), MD-dMRI (DPS 2-tier: prolate μFA + isotropic fallback): aniso_maxcond=4 (cap 8.0:1)",
         fontsize=12, fontweight="bold"
     )
 
