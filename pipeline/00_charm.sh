@@ -14,10 +14,10 @@
 #   bash 00_charm.sh <SUBJECT_ID> <T1.nii> <T2.nii> <output_dir> <ini_file>
 #
 # Example:
-#   bash pipeline/00_charm.sh FullPD5 \
-#        FullPD5_segmentation/T1w_1mm.nii \
-#        FullPD5_segmentation/T2w_1mm.nii \
-#        FullPD5_segmentation \
+#   bash pipeline/00_charm.sh "$SUBJECT" \
+#        $WORK_DIR/T1w.nii \
+#        $WORK_DIR/T2w.nii \
+#        $WORK_DIR \
 #        config/charm_highquality.ini
 #
 # Runtime: ~1 hour on Apple Silicon M-series

@@ -10,8 +10,8 @@ Montage: C3 (anode, left M1) → Fp2 (cathode, right supraorbital), 2 mA
 Same as sub04 reference simulation.
 
 Requirements:
-  - m2m_FullPD5/ must exist (run CHARM first)
-  - m2m_FullPD5/dMRI_MNI_reg/ must exist (run dwi2cond first, for DTI model)
+  - m2m_<subject>/ must exist (run CHARM first)
+  - m2m_<subject>/dMRI_MNI_reg/ must exist (run dwi2cond first, for DTI model)
   - tensor_MD_dMRI.nii.gz must exist (run 02_build_conductivity_tensor.py first)
 
 Usage:
@@ -20,6 +20,11 @@ Usage:
 
 NOTE: Do NOT pass fn_tensor_nifti with tms_flex_opt/tes_flex_opt — documented SimNIBS bug.
 """
+
+import os
+import sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _config import cfg  # noqa: E402  (paths/subject from config/config.sh)
 
 import simnibs
 import os
@@ -32,8 +37,8 @@ import numpy as np
 os.environ.setdefault("OMP_NUM_THREADS", "1")
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 
-WDIR    = "/Users/santi/Documents/MRE_tDCS_PD/FullPD5_segmentation"
-SUBPATH = "m2m_FullPD5"
+WDIR    = cfg["WORK_DIR"]
+SUBPATH = f'm2m_{cfg["SUBJECT"]}'
 TENSOR  = os.path.join(WDIR, "tensor_MD_dMRI.nii.gz")
 
 # SimNIBS resolves subpath and pathfem relative to CWD — must be in WDIR

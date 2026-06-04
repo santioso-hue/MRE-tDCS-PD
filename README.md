@@ -1,62 +1,72 @@
-# MRE-tDCS-PD: MD-dMRI–Informed tDCS Simulation in Parkinson's Disease
+# MD-dMRI–informed tDCS electric-field modelling
 
-Computational pipeline for subject-specific tDCS electric-field modelling using
-diffusion MRI–derived conductivity tensors, applied to Parkinson's disease patients.
+A subject-specific pipeline for transcranial direct-current stimulation (tDCS) electric-field
+simulation, where white-matter conductivity tensors are derived from b-tensor-encoded
+multidimensional diffusion MRI (MD-dMRI / QTI) rather than conventional single-shell DTI. It
+targets deep subcortical structures (substantia nigra, STN, globus pallidus) relevant to
+Parkinson's disease.
 
-## Key Idea
+## What it does
 
-Standard tDCS simulations assume isotropic tissue conductivity or use FA-based
-anisotropy from conventional DTI. This project introduces a third model driven by
-**microscopic fractional anisotropy (μFA)** estimated from Q-space trajectory imaging
-(QTI / MD-dMRI). μFA captures intra-voxel fibre architecture that is invisible to
-conventional DTI, potentially improving conductivity estimates in regions of fibre
-crossings and dispersion — common in PD-relevant white matter tracts.
+The pipeline builds a finite-element head model, derives an anisotropic conductivity tensor in
+each white-/grey-matter voxel, runs the tDCS simulation in SimNIBS, and compares the induced
+electric field across three conductivity models:
 
-## Three-Model Comparison
+| Model | Conductivity source |
+|-------|---------------------|
+| **ISO** | Scalar literature conductivities (no anisotropy) |
+| **DTI** | Diffusion tensor from single-shell DTI (`dwi2cond`) |
+| **MD-dMRI** | Mean diffusion tensor ⟨D⟩ from QTI, with free-water elimination |
 
-| Model | Conductivity | Anisotropy driver |
-|-------|-------------|-------------------|
-| **ISO** | Scalar literature values | None |
-| **DTI** | FA-based tensors via `dwi2cond` | Conventional DWI |
-| **MD-dMRI** | μFA-based tensors from QTI | Spherical dMRI (QTI+) |
+The conductivity mapping (σ ∝ D, volume-normalised) is identical across the anisotropic
+models; they differ only in the diffusion tensor they start from. The MD-dMRI tensor is less
+biased by diffusional kurtosis and CSF partial volume than the DTI tensor. See
+[pipeline/conductivity_models_derivation.md](pipeline/conductivity_models_derivation.md) for
+the theory, the three models, and limitations.
 
-## Repository Structure
+## Setup
+
+1. Install [FSL](https://fsl.fmrib.ox.ac.uk/) (≥ 6.0) and
+   [SimNIBS](https://simnibs.github.io/simnibs/) (4.6).
+2. Copy the config template and edit it for your machine and subject:
+
+   ```bash
+   cp config/config.example.sh config/config.sh
+   # edit config/config.sh: SUBJECT, DATA_DIR, WORK_DIR, input file names, tool paths
+   ```
+
+   `config/config.sh` is gitignored — paths and subject IDs stay out of version control. The
+   bash scripts source it; the Python scripts read it through `pipeline/_config.py`.
+
+## Running
+
+Scripts run in order; each reads its paths from the config.
+
+```bash
+bash    pipeline/00_charm.sh "$SUBJECT" T1.nii T2.nii "$WORK_DIR"   # FEM head model
+bash    pipeline/00_dwi2cond.sh                                      # DTI tensor (dwi2cond)
+bash    pipeline/01_register_dMRI_to_T1.sh                           # QTI maps/tensors -> T1
+simnibs_python pipeline/02_build_conductivity_tensor.py              # sigma ~ <D> (MD-dMRI)
+simnibs_python pipeline/02c_build_multicompartment_conductivity.py   # free-water-eliminated
+simnibs_python pipeline/03_run_simulations.py                        # ISO + DTI + MD-dMRI FEM
+simnibs_python analysis/04_extract_roi_efield.py                     # ROI E-field comparison
+```
+
+## Layout
 
 ```
-pipeline/           Pipeline scripts (00–03), run in order
-  00_charm.sh         Head model (SimNIBS charm, T1+T2)
-  00_dwi2cond.sh      DTI preprocessing (dtifit + vecreg)
-  01_register_dMRI_to_T1.sh  Register QTI outputs to T1 space
-  01b_save_v1_nifti.py       Save principal eigenvectors from dps.mat
-  01c_save_dps_niftis.py     Save μFA and MD from dps.mat (NaN-free)
-  02_build_conductivity_tensor.py  Build 6-component diffusion tensor
-  03_run_simulations.py      Run ISO + DTI + MD-dMRI simulations
-
-config/
-  charm_highquality.ini   CHARM settings (T1+T2, macOS Apple Silicon)
-
-analysis/
-  04_extract_roi_efield.py   Regional E-field comparison (TODO)
-
-docs/
-  pipeline_overview.md    Detailed pipeline documentation, QC notes, open questions
+config/      config.example.sh (template), charm_highquality.ini
+pipeline/    00-03 pipeline scripts + _config.py (shared config loader)
+             conductivity_models_derivation.md  (methods)
+analysis/    04_extract_roi_efield.py + results/
+docs/        references
 ```
 
-## Requirements
+## Notes
 
-- [FSL](https://fsl.fmrib.ox.ac.uk/) ≥ 6.0 — installed at `~/fsl`
-- [SimNIBS](https://simnibs.github.io/simnibs/) 4.6.0 — installed at `~/Applications/SimNIBS-4.6`
-- Python packages (via SimNIBS environment): `nibabel`, `scipy`, `numpy`
-
-**macOS Apple Silicon:** `OMP_NUM_THREADS=1` and `KMP_DUPLICATE_LIB_OK=TRUE` are
-required for SimNIBS. All scripts set these automatically.
-
-## Status
-
-- [x] Pilot: FullPD5 — head model, DTI tensor, MD-dMRI tensor, all 3 simulations ✓
-- [ ] Visual QC: b0→T1 registration in FSLeyes
-- [ ] Regional E-field comparison (Step 4)
-- [ ] Additional PD subjects
-
-See [docs/pipeline_overview.md](docs/pipeline_overview.md) for full details, QC
-metrics, and known issues.
+- On macOS/Apple Silicon the scripts set `OMP_NUM_THREADS=1` and `KMP_DUPLICATE_LIB_OK=TRUE`
+  for SimNIBS.
+- Subject data (NIfTIs, meshes, `.mat` fits, working directories) are gitignored; the
+  repository contains code and documentation only.
+- The models are motivated by bias arguments and validated against each other; direct
+  validation against MR current-density imaging (MRCDI/MREIT) is future work.

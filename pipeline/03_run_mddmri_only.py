@@ -5,6 +5,11 @@ Used after reverting from WM-only to whole-brain anisotropy.
 ISO and DTI results are unchanged and do not need re-running.
 """
 
+import os
+import sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _config import cfg  # noqa: E402  (paths/subject from config/config.sh)
+
 import simnibs
 import os
 import nibabel as nib
@@ -13,8 +18,8 @@ import numpy as np
 os.environ.setdefault("OMP_NUM_THREADS", "1")
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 
-WDIR    = "/Users/santi/Documents/MRE_tDCS_PD/FullPD5_segmentation"
-SUBPATH = "m2m_FullPD5"
+WDIR    = cfg["WORK_DIR"]
+SUBPATH = f'm2m_{cfg["SUBJECT"]}'
 TENSOR  = os.path.join(WDIR, "tensor_MD_dMRI.nii.gz")
 
 os.chdir(WDIR)

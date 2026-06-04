@@ -57,3 +57,6 @@ venv/
 *.swp
 *.swo
 *~
+
+# Local machine config (paths, subject ID)
+config/config.sh

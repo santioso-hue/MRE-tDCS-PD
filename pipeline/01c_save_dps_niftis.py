@@ -41,13 +41,18 @@ Outputs (saved in registration/):
   rd_dMRI.nii.gz            — Radial diffusivity in dMRI space, μm²/ms
 """
 
+import os
+import sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _config import cfg  # noqa: E402  (paths/subject from config/config.sh)
+
 import numpy as np
 import nibabel as nib
 import scipy.io
 import os
 
-FDIR = "/Users/santi/Downloads/FullPD5_forSantiago/FullPD5/fit"
-RDIR = "/Users/santi/Documents/MRE_tDCS_PD/FullPD5_segmentation/registration"
+FDIR = cfg["FIT_DIR"]
+RDIR = cfg["REG_DIR"]
 
 os.makedirs(RDIR, exist_ok=True)
 
