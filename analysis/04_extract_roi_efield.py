@@ -1,347 +1,254 @@
 """
-04_extract_roi_efield.py — Extract and compare E-field across PD-relevant ROIs
+04_extract_roi_efield.py — Extract E-field statistics from ROIs for all three models
 
-Compares |E| (V/m) across three conductivity models:
-  ISO     — isotropic scalar (sim_ISO/FullPD5_TDCS_1_scalar.msh)
-  DTI     — FA-based anisotropy (sim_DTI/FullPD5_TDCS_1_vn.msh)
-  MD-dMRI — μFA-based anisotropy (sim_MD_dMRI/FullPD5_TDCS_1_vn.msh)
+Montage: C3 (anode, left M1) → Fp2 (cathode, right supraorbital), 2 mA
+ROIs: subcortical PD-relevant structures from Olsson 2025 + DISTAL atlas (Ewert 2018)
+Method: radius spheres at MNI coordinates → transform to subject space → sample WM+GM elements
 
-ROIs: all subcortical structures from Olsson 2025 (Pauli et al. 2018 atlas),
-bilateral, plus GPe/GPi for completeness.
+Tissue sampling:
+  CHARM assigns brainstem/basal-ganglia structures predominantly to WM (tag=1), not
+  cortical GM (tag=2). Using only tag=2 produces zero-element ROIs for SNc/VTA.
+  We sample both WM (tag=1) and GM (tag=2) — these are the only volumetric tissue
+  types in the FEM where anisotropic conductivity matters.
 
-  SNc  — Substantia Nigra pars compacta  (Olsson 2025: MD↑ d=1.35**, μFA↓ d=−1.01*)
-  SNr  — Substantia Nigra pars reticulata (Olsson 2025: MD↑ d=1.16**)
-  VTA  — Ventral Tegmental Area           (Olsson 2025: μFA↓ d=−0.95*, NM-CNR↓)
-  PUT  — Putamen                          (Olsson 2025: μFA effect, stiffness↓)
-  Ca   — Caudate Nucleus                  (Olsson 2025: stiffness↓, MD age effects)
-  NAC  — Nucleus Accumbens                (Olsson 2025: FA↓ d=−1.15***, largest effect)
-  GPi  — Globus Pallidus internus         (Olsson 2025: no significant PD effect)
-  GPe  — Globus Pallidus externus         (Olsson 2025: no significant PD effect)
-  RN   — Red Nucleus                      (Olsson 2025: MD correlation r=0.53**)
+Radii:
+  - Cortical (L_M1): 3mm (large, well-resolved)
+  - Basal ganglia (PUT, NAc, GPe): 5mm (moderate-sized nuclei)
+  - Mesencephalon (SNc, VTA): 7mm (small nuclei, partial-volume dominated, brainstem)
 
-MNI coordinates: DISTAL atlas (Ewert et al. 2018) for SNc/VTA; Pauli et al. 2018
-approximations for others. Transformed to subject space via CHARM warp.
-
-NOTE on STN: excluded — not in Olsson 2025's ROI set and too small (≈5mm diameter)
-for reliable extraction with 3mm radius spheres at 2.5mm QTI resolution.
-
-ROI sphere radius: 3mm (see ROI_RADIUS_MM).
-Statistics reported: mean, median, p25, p75, p95 (|E| in V/m).
-The 95th percentile is reported as a robust peak-field estimate less sensitive
-to outlier mesh elements than the maximum (Huang et al. 2017, eLife 6:e18834).
-
-Output:
-  results/roi_efield_table.csv   — statistics per ROI × model
-  results/roi_efield_boxplot.png — comparison figure
-  results/roi_efield_ratios.csv  — DTI/ISO and MD-dMRI/ISO ratios
+Outputs:
+  - Table of mean / median / p95 E-field per ROI per model
+  - Pairwise delta table: (MD-dMRI − ISO) / ISO and (MD-dMRI − DTI) / DTI
+  - Tissue composition of each ROI (fraction WM vs GM elements)
 
 Usage:
   cd /Users/santi/Documents/MRE_tDCS_PD/FullPD5_segmentation
-  ~/Applications/SimNIBS-4.6/bin/simnibs_python ../analysis/04_extract_roi_efield.py
+  ~/Applications/SimNIBS-4.6/bin/simnibs_python scripts/04_extract_roi_efield.py
 """
 
-import os
-import sys
 import numpy as np
-import nibabel as nib
-from scipy.ndimage import map_coordinates
-
 import simnibs
+from simnibs import mesh_io
+import os
 
-# ── Paths ─────────────────────────────────────────────────────────────────────
-WDIR   = "/Users/santi/Documents/MRE_tDCS_PD/FullPD5_segmentation"
-OUTDIR = "/Users/santi/Documents/MRE_tDCS_PD/analysis/results"
-os.makedirs(OUTDIR, exist_ok=True)
-os.chdir(WDIR)
+WDIR    = "/Users/santi/Documents/MRE_tDCS_PD/FullPD5_segmentation"
+SUBPATH = os.path.join(WDIR, "m2m_FullPD5")
 
+# ── ROI definitions (MNI152 space, mm) ───────────────────────────────────────
+# References: Ewert et al. 2018 (DISTAL), Pauli et al. 2018 (CIT168 7T atlas)
+# Side notation: L = anode hemisphere (C3, left), R = cathode hemisphere (Fp2, right)
+ROIS = {
+    # Subcortical — primary PD targets / Olsson 2025 key regions
+    "L_SNc":  [-8,  -16, -12],   # left  substantia nigra pars compacta
+    "R_SNc":  [ 8,  -16, -12],   # right SNc
+    "L_VTA":  [-4,  -16,  -9],   # left  ventral tegmental area
+    "R_VTA":  [ 4,  -16,  -9],   # right VTA
+    "L_PUT":  [-28,  -2,   4],   # left  putamen
+    "R_PUT":  [ 28,  -2,   4],   # right putamen
+    "L_NAc":  [-12,  10,  -8],   # left  nucleus accumbens
+    "R_NAc":  [ 12,  10,  -8],   # right nucleus accumbens
+    "L_GPe":  [-24,  -8,   2],   # left  globus pallidus externus
+    "R_GPe":  [ 24,  -8,   2],   # right GPe
+    # Cortical ROI — directly under C3 electrode (anode, left M1)
+    "L_M1":   [-40, -14,  60],   # left  primary motor cortex hand area
+}
+
+# Per-ROI radii (mm) — scaled to nucleus size and CHARM segmentation resolution
+# Mesencephalon structures (SNc, VTA): 7mm — CHARM labels most of this region as WM;
+#   the larger sphere is needed to capture any nearby anisotropic tissue effect.
+#   Results are dominated by the surrounding WM field, not the nucleus itself.
+# Basal ganglia (PUT, NAc, GPe): 5mm — moderate nuclei, partially GM-labelled.
+# Cortical (L_M1): 3mm — well-resolved in CHARM, directly under C3 electrode.
+ROI_RADII = {
+    "L_SNc": 7.0,
+    "R_SNc": 7.0,
+    "L_VTA": 7.0,
+    "R_VTA": 7.0,
+    "L_PUT": 5.0,
+    "R_PUT": 5.0,
+    "L_NAc": 5.0,
+    "R_NAc": 5.0,
+    "L_GPe": 5.0,
+    "R_GPe": 5.0,
+    "L_M1":  3.0,
+}
+
+# Tissue tags to sample — both WM (1) and GM (2)
+# CHARM labels subcortical structures (SNc, VTA, GPe, PUT) predominantly as WM.
+# The primary effect of anisotropic conductivity is in WM; excluding it hides the
+# main model comparison signal. Both tags are included throughout for consistency.
+TISSUE_TAGS = (1, 2)
+
+# ── Simulation mesh files ─────────────────────────────────────────────────────
 MODELS = {
-    "ISO":     "sim_ISO/FullPD5_TDCS_1_scalar.msh",
-    "DTI":     "sim_DTI/FullPD5_TDCS_1_vn.msh",
-    "MD-dMRI": "sim_MD_dMRI/FullPD5_TDCS_1_vn.msh",
+    "ISO":         os.path.join(WDIR, "sim_ISO",         "FullPD5_TDCS_1_scalar.msh"),
+    "DTI":         os.path.join(WDIR, "sim_DTI",         "FullPD5_TDCS_1_vn.msh"),  # dwi2cond
+    "MD-dMRI":     os.path.join(WDIR, "sim_MD_dMRI",     "FullPD5_TDCS_1_vn.msh"),  # σ∝⟨D⟩ (Model 3)
+    "MD-dMRI-FWE": os.path.join(WDIR, "sim_MD_dMRI_mc",  "FullPD5_TDCS_1_vn.msh"),  # free-water-eliminated (Model 4)
 }
 
-WARP_PATH = "m2m_FullPD5/toMNI/MNI2Conform_nonl.nii.gz"
 
-# ── ROI definitions — MNI RAS coordinates (mm) ───────────────────────────────
-# Coordinate sources:
-#   SNc/SNr/VTA: DISTAL atlas (Ewert et al. 2018 NeuroImage)
-#   Caudate/NAC/GPe/GPi: Pauli et al. 2018 (high-res 7T subcortical atlas)
-#   RN (Red Nucleus): standard brainstem atlas coordinates
-#   PUT: MNI Structural Atlas (Collins et al. 1994)
-#
-# All structures also reported in Olsson 2025 (Pauli 2018 atlas segmentation).
-# STN excluded: not in Olsson 2025 ROI set; at ≈5mm diameter it is too small
-# for reliable sampling with a 5mm radius sphere at 2.5mm QTI resolution.
-#
-# Montage: C3 (anode, left M1) → Fp2 (cathode, right supraorbital)
-# Left hemisphere structures are ipsilateral to anode.
+def get_roi_stats(msh, center_subj, radius, tissue_tags=(1, 2)):
+    """Extract E-field magnitude statistics within a sphere over WM+GM elements.
 
-ROI_MNI = {
-    # Primary PD pathology (dopaminergic degeneration)
-    "L_SNc": np.array([-5.0,  -15.0, -11.0]),
-    "R_SNc": np.array([ 5.0,  -15.0, -11.0]),
-    "L_SNr": np.array([-5.0,  -25.0, -14.0]),   # inferior to SNc
-    "R_SNr": np.array([ 5.0,  -25.0, -14.0]),
-    "L_VTA": np.array([-9.0,  -14.0,  -8.0]),
-    "R_VTA": np.array([ 9.0,  -14.0,  -8.0]),
-    # Basal ganglia (motor circuit, all in Olsson 2025)
-    "L_PUT": np.array([-28.0,   1.0,   2.0]),
-    "R_PUT": np.array([ 28.0,   1.0,   2.0]),
-    "L_Ca":  np.array([-12.0,  13.0,   8.0]),   # Caudate head
-    "R_Ca":  np.array([ 12.0,  13.0,   8.0]),
-    "L_NAC": np.array([ -9.0,  10.0,  -7.0]),   # Nucleus Accumbens
-    "R_NAC": np.array([  9.0,  10.0,  -7.0]),
-    "L_GPi": np.array([-17.0,  -5.0,  -1.0]),
-    "R_GPi": np.array([ 17.0,  -5.0,  -1.0]),
-    "L_GPe": np.array([-22.0,  -4.0,   2.0]),
-    "R_GPe": np.array([ 22.0,  -4.0,   2.0]),
-    # Brainstem reference (significant MD correlation in Olsson 2025)
-    "L_RN":  np.array([ -4.0,  -22.0,  -9.0]),  # Red Nucleus
-    "R_RN":  np.array([  4.0,  -22.0,  -9.0]),
-}
-
-ROI_RADIUS_MM = 3.0    # spherical ROI radius
-# 3mm chosen for subcortical PD structures (SNc ≈5–7mm diam, VTA ≈3–5mm):
-# 5mm spheres extend outside small nuclei into neighbouring tissue.
-# 3mm samples the structural core while staying within typical nucleus boundaries.
-# Reference: Saturnino et al. 2019 NeuroImage used 5mm for CORTICAL structures;
-# smaller subcortical structures require proportionally smaller radii.
-# With 3000 Monte Carlo points, ~500–1000 valid interpolated values per ROI.
-N_SAMPLE_PTS  = 3000   # Monte Carlo sphere samples per ROI
-RANDOM_SEED   = 42
-
-
-# ── Coordinate transform: MNI → subject (Conform) space ──────────────────────
-def mni_to_subject(mni_pts: np.ndarray, warp: np.ndarray,
-                   warp_affine_inv: np.ndarray) -> np.ndarray:
+    tissue_tags: tuple of SimNIBS tags to include (1=WM, 2=GM).
+    Returns n, mean, median, p95 E-field and tissue composition (n_wm, n_gm).
     """
-    Apply CHARM's MNI2Conform nonlinear warp to a set of MNI RAS coordinates.
-
-    The warp field is defined on the MNI grid; each voxel stores the
-    displacement vector from MNI space to Conform (subject T1) space,
-    stored as absolute target coordinates.
-
-    Args:
-        mni_pts:          (N, 3) array of MNI RAS coordinates (mm)
-        warp:             (X, Y, Z, 3) warp field array
-        warp_affine_inv:  inverse affine of the warp NIfTI (MNI RAS → voxel)
-
-    Returns:
-        (N, 3) array of subject-space RAS coordinates (mm)
-    """
-    hom  = np.column_stack([mni_pts, np.ones(len(mni_pts))])
-    vox  = (warp_affine_inv @ hom.T).T[:, :3]  # MNI voxel indices
-    subj = np.zeros_like(mni_pts)
-    for dim in range(3):
-        subj[:, dim] = map_coordinates(
-            warp[..., dim], vox.T, order=1, mode='nearest'
-        )
-    return subj
+    tag = msh.elm.tag1
+    in_tissue = np.zeros(len(tag), dtype=bool)
+    for t in tissue_tags:
+        in_tissue |= (tag == t)
+    ctr  = msh.elements_baricenters().value     # (N_elems, 3)
+    dist = np.linalg.norm(ctr - center_subj[np.newaxis, :], axis=1)
+    roi  = in_tissue & (dist < radius)
+    if not roi.any():
+        return dict(n=0, n_wm=0, n_gm=0, mean=np.nan, median=np.nan, p95=np.nan)
+    E = msh.field['magnE'].value[roi]
+    return dict(
+        n      = int(roi.sum()),
+        n_wm   = int(np.sum((tag == 1) & roi)),
+        n_gm   = int(np.sum((tag == 2) & roi)),
+        mean   = float(np.mean(E)),
+        median = float(np.median(E)),
+        p95    = float(np.percentile(E, 95)),
+    )
 
 
-def make_sphere_samples(center: np.ndarray, radius: float,
-                        n: int, seed: int) -> np.ndarray:
-    """Return n uniformly-distributed points inside a sphere of given radius."""
-    rng = np.random.default_rng(seed)
-    vecs = rng.standard_normal((n, 3))
-    vecs /= np.linalg.norm(vecs, axis=1, keepdims=True)
-    radii = radius * rng.random(n) ** (1.0 / 3.0)   # volume-uniform
-    return center + (radii[:, None] * vecs)
+# ── Transform MNI → subject coordinates ─────────────────────────────────────
+print("Transforming MNI coordinates to subject space...")
+mni_coords  = np.array(list(ROIS.values()), dtype=float)
+try:
+    subj_coords = simnibs.mni2subject_coords(mni_coords, SUBPATH)
+    roi_centers = {name: subj_coords[i] for i, name in enumerate(ROIS)}
+    print(f"  MNI → subject transform applied via m2m_FullPD5/")
+except Exception as e:
+    print(f"  WARNING: mni2subject_coords failed ({e})")
+    print(f"  Falling back to identity (MNI = subject space — approximate only)")
+    roi_centers = {name: np.array(coord) for name, coord in ROIS.items()}
 
+# ── Extract E-field per model ─────────────────────────────────────────────────
+results = {}   # results[model_name][roi_name] = stats dict
 
-# ── Load warp ─────────────────────────────────────────────────────────────────
-print("Loading MNI→Conform warp field...")
-if not os.path.exists(WARP_PATH):
-    raise FileNotFoundError(f"Warp not found: {WARP_PATH} — run CHARM first.")
-warp_img = nib.load(WARP_PATH)
-warp_data = warp_img.get_fdata()
-warp_aff_inv = np.linalg.inv(warp_img.affine)
-print(f"  Warp shape: {warp_data.shape}")
-
-# ── Transform ROI centres to subject space ────────────────────────────────────
-print("\nTransforming ROI centres: MNI → subject space")
-mni_arr = np.array(list(ROI_MNI.values()))
-subj_arr = mni_to_subject(mni_arr, warp_data, warp_aff_inv)
-ROI_SUBJ = {name: subj_arr[i] for i, name in enumerate(ROI_MNI)}
-
-for name, sc in ROI_SUBJ.items():
-    print(f"  {name:8s}: MNI {ROI_MNI[name]} → subj [{sc[0]:+.1f}, {sc[1]:+.1f}, {sc[2]:+.1f}] mm")
-
-# ── Pre-compute sphere sample sets (same points for all models) ───────────────
-print("\nGenerating spherical ROI sample points...")
-sphere_pts = {
-    name: make_sphere_samples(center, ROI_RADIUS_MM, N_SAMPLE_PTS, RANDOM_SEED + i)
-    for i, (name, center) in enumerate(ROI_SUBJ.items())
-}
-
-# ── Extract |E| per model per ROI ────────────────────────────────────────────
-print("\nExtracting E-field magnitudes...")
-
-# results[model][roi] = 1-D array of valid |E| values (V/m)
-results = {}
-
-for model, mesh_path in MODELS.items():
-    if not os.path.exists(mesh_path):
-        print(f"  SKIP {model}: {mesh_path} not found")
+for model, msh_path in MODELS.items():
+    if not os.path.exists(msh_path):
+        print(f"\n  [{model}] mesh not found: {msh_path}  — SKIPPING")
         results[model] = None
         continue
 
-    print(f"\n  Loading {model}: {mesh_path}")
-    m = simnibs.read_msh(mesh_path)
-    field = m.field['magnE']
+    print(f"\nLoading {model} mesh: {msh_path}")
+    msh = mesh_io.read_msh(msh_path)
+    print(f"  Elements: {msh.elm.nr:,}   Nodes: {msh.nodes.nr:,}")
+    if 'magnE' not in msh.field:
+        print(f"  ERROR: 'magnE' field not found. Fields: {list(msh.field.keys())}")
+        results[model] = None
+        continue
 
     results[model] = {}
-    for roi_name, pts in sphere_pts.items():
-        vals = field.interpolate_scattered(pts, out_fill=np.nan)
-        valid = np.isfinite(vals) & (vals > 0)
-        results[model][roi_name] = vals[valid]
-        n_v = valid.sum()
-        if n_v > 0:
-            print(f"    {roi_name:8s}: n={n_v:4d}  "
-                  f"mean={np.mean(vals[valid]):.3f}  "
-                  f"median={np.median(vals[valid]):.3f}  "
-                  f"p95={np.percentile(vals[valid], 95):.3f} V/m")
-        else:
-            print(f"    {roi_name:8s}: NO VALID POINTS — ROI may be outside mesh")
+    for roi_name, center in roi_centers.items():
+        radius = ROI_RADII[roi_name]
+        stats  = get_roi_stats(msh, center, radius, tissue_tags=TISSUE_TAGS)
+        results[model][roi_name] = stats
 
-# ── Build statistics table ────────────────────────────────────────────────────
-print("\n\nSummary statistics table (|E| in V/m)")
+
+# ── Print table ───────────────────────────────────────────────────────────────
+def pct_delta(new, ref):
+    if ref == 0 or np.isnan(ref) or np.isnan(new):
+        return float('nan')
+    return 100 * (new - ref) / ref
+
+
+print("\n" + "=" * 100)
+print(f"E-field magnitude — C3(+2mA anode) → Fp2(-2mA cathode)")
+print(f"Statistic: p95 (V/m).  Tissue: WM (tag=1) + GM (tag=2).  Radii: 7mm SNc/VTA, 5mm BG, 3mm M1")
 print("=" * 100)
 
-stats_rows = []   # list of dicts for CSV
+available = [m for m in MODELS if results[m] is not None]
 
-for roi_name in ROI_MNI:
-    for model in MODELS:
-        if results.get(model) is None or roi_name not in results[model]:
-            continue
-        v = results[model][roi_name]
-        if len(v) == 0:
-            continue
-        row = {
-            "ROI":   roi_name,
-            "Model": model,
-            "N":     len(v),
-            "mean":  float(np.mean(v)),
-            "median":float(np.median(v)),
-            "p25":   float(np.percentile(v, 25)),
-            "p75":   float(np.percentile(v, 75)),
-            "p95":   float(np.percentile(v, 95)),
-        }
-        stats_rows.append(row)
-
-# Print compact table
-hdr = f"{'ROI':10s}  {'Model':8s}  {'N':>5s}  {'mean':>7s}  {'median':>7s}  {'p25':>7s}  {'p75':>7s}  {'p95':>7s}"
+hdr = f"{'ROI':<10}"
+for m in available:
+    hdr += f"  {m:>10}(p95)"
+if "ISO" in available and "MD-dMRI" in available:
+    hdr += f"  {'MD-dMRI vs ISO':>16}"
+if "DTI" in available and "MD-dMRI" in available:
+    hdr += f"  {'MD-dMRI vs DTI':>16}"
+hdr += f"   {'WM/GM(n)':>14}"
 print(hdr)
 print("-" * len(hdr))
-for r in stats_rows:
-    print(f"{r['ROI']:10s}  {r['Model']:8s}  {r['N']:5d}  "
-          f"{r['mean']:7.4f}  {r['median']:7.4f}  "
-          f"{r['p25']:7.4f}  {r['p75']:7.4f}  {r['p95']:7.4f}")
 
-# ── Save CSV ──────────────────────────────────────────────────────────────────
+for roi in ROIS:
+    row = f"{roi:<10}"
+    vals = {}
+    for m in available:
+        st = results[m].get(roi, {})
+        v  = st.get('p95', np.nan)
+        vals[m] = v
+        row += f"  {v:>15.4f}" if not np.isnan(v) else f"  {'N/A':>15}"
+    if "ISO" in vals and "MD-dMRI" in vals:
+        d = pct_delta(vals.get("MD-dMRI", np.nan), vals.get("ISO", np.nan))
+        row += f"  {d:>+14.1f}%" if not np.isnan(d) else f"  {'N/A':>15}"
+    if "DTI" in vals and "MD-dMRI" in vals:
+        d = pct_delta(vals.get("MD-dMRI", np.nan), vals.get("DTI", np.nan))
+        row += f"  {d:>+14.1f}%" if not np.isnan(d) else f"  {'N/A':>15}"
+    if available:
+        st0   = results[available[0]][roi]
+        n_wm  = st0.get('n_wm', 0)
+        n_gm  = st0.get('n_gm', 0)
+        r     = ROI_RADII[roi]
+        row  += f"   WM={n_wm},GM={n_gm}(r={r:.0f}mm)"
+    print(row)
+
+print("\n" + "-" * 100)
+print("Mean E-field version (complementary):")
+print("-" * 100)
+
+hdr2 = f"{'ROI':<10}"
+for m in available:
+    hdr2 += f"  {m:>10}(mean)"
+if "ISO" in available and "MD-dMRI" in available:
+    hdr2 += f"  {'MD-dMRI vs ISO':>16}"
+if "DTI" in available and "MD-dMRI" in available:
+    hdr2 += f"  {'MD-dMRI vs DTI':>16}"
+print(hdr2)
+
+for roi in ROIS:
+    row = f"{roi:<10}"
+    vals = {}
+    for m in available:
+        st = results[m].get(roi, {})
+        v  = st.get('mean', np.nan)
+        vals[m] = v
+        row += f"  {v:>15.4f}" if not np.isnan(v) else f"  {'N/A':>15}"
+    if "ISO" in vals and "MD-dMRI" in vals:
+        d = pct_delta(vals.get("MD-dMRI", np.nan), vals.get("ISO", np.nan))
+        row += f"  {d:>+14.1f}%" if not np.isnan(d) else f"  {'N/A':>15}"
+    if "DTI" in vals and "MD-dMRI" in vals:
+        d = pct_delta(vals.get("MD-dMRI", np.nan), vals.get("DTI", np.nan))
+        row += f"  {d:>+14.1f}%" if not np.isnan(d) else f"  {'N/A':>15}"
+    print(row)
+
+# ── CSV output: all models + triaxial deltas ─────────────────────────────────
 import csv
-
-csv_path = os.path.join(OUTDIR, "roi_efield_table.csv")
+csv_path = os.path.join(WDIR, "..", "analysis", "results", "roi_efield_4models.csv")
+os.makedirs(os.path.dirname(csv_path), exist_ok=True)
 with open(csv_path, "w", newline="") as f:
-    writer = csv.DictWriter(f, fieldnames=["ROI", "Model", "N", "mean", "median", "p25", "p75", "p95"])
-    writer.writeheader()
-    writer.writerows(stats_rows)
-print(f"\nSaved: {csv_path}")
+    w = csv.writer(f)
+    w.writerow(["ROI"] + [f"{m}_p95_Vm" for m in available] +
+               ["MD-dMRI_vs_ISO_%", "MD-dMRI_vs_DTI_%"])
+    for roi in ROIS:
+        vals = {m: results[m][roi].get('p95', np.nan) for m in available}
+        row = [roi] + [f"{vals[m]:.4f}" for m in available]
+        md = vals.get("MD-dMRI", np.nan)
+        row += [f"{pct_delta(md, vals.get('ISO',np.nan)):+.1f}",
+                f"{pct_delta(md, vals.get('DTI',np.nan)):+.1f}"]
+        w.writerow(row)
+print(f"\nCSV written: {csv_path}")
 
-# ── Compute ISO-normalised ratios ─────────────────────────────────────────────
-ratio_rows = []
-for roi_name in ROI_MNI:
-    iso_vals = results.get("ISO", {}).get(roi_name, np.array([]))
-    if len(iso_vals) == 0:
-        continue
-    iso_med = np.median(iso_vals)
-    row = {"ROI": roi_name, "ISO_median_Vm": round(iso_med, 5)}
-    for model in ["DTI", "MD-dMRI"]:
-        v = results.get(model, {}).get(roi_name, np.array([]))
-        if len(v) == 0:
-            continue
-        med = np.median(v)
-        row[f"{model}_median_Vm"] = round(med, 5)
-        row[f"{model}/ISO_ratio"]  = round(med / iso_med, 4) if iso_med > 0 else np.nan
-    ratio_rows.append(row)
-
-print("\n|E| ratios (median) relative to ISO:")
-print(f"{'ROI':10s}  {'ISO (V/m)':>10s}  {'DTI/ISO':>8s}  {'MDDMRI/ISO':>10s}")
-print("-" * 50)
-for r in ratio_rows:
-    print(f"{r['ROI']:10s}  {r.get('ISO_median_Vm', 'N/A'):>10.4f}  "
-          f"{r.get('DTI/ISO_ratio', 'N/A'):>8.4f}  "
-          f"{r.get('MD-dMRI/ISO_ratio', 'N/A'):>10.4f}")
-
-ratio_csv = os.path.join(OUTDIR, "roi_efield_ratios.csv")
-all_keys = ["ROI", "ISO_median_Vm", "DTI_median_Vm", "DTI/ISO_ratio",
-            "MD-dMRI_median_Vm", "MD-dMRI/ISO_ratio"]
-with open(ratio_csv, "w", newline="") as f:
-    writer = csv.DictWriter(f, fieldnames=all_keys, extrasaction="ignore")
-    writer.writeheader()
-    writer.writerows(ratio_rows)
-print(f"Saved: {ratio_csv}")
-
-# ── Plot ──────────────────────────────────────────────────────────────────────
-try:
-    import matplotlib
-    matplotlib.use("Agg")   # headless
-    import matplotlib.pyplot as plt
-
-    n_rois = len(ROI_MNI)
-    n_cols = 6
-    n_rows = (n_rois + n_cols - 1) // n_cols
-    fig, axes = plt.subplots(n_rows, n_cols, figsize=(22, 4 * n_rows), sharey=False)
-    fig.suptitle(
-        "E-field magnitude (|E|) in PD-relevant ROIs — FullPD5\n"
-        "Montage: C3 (anode, left M1) → Fp2 (cathode), 2 mA\n"
-        "ISO, DTI (dwi2cond), MD-dMRI (DPS σ∝⟨D⟩: ad/rd mean compartment tensor, 97% anisotropic): aniso_maxcond=4",
-        fontsize=12, fontweight="bold"
-    )
-
-    roi_names = list(ROI_MNI.keys())
-    colors = {"ISO": "#4e9af1", "DTI": "#f4a460", "MD-dMRI": "#6dbf67"}
-    model_list = ["ISO", "DTI", "MD-dMRI"]
-
-    for idx, roi_name in enumerate(roi_names):
-        ax = axes[idx // n_cols][idx % n_cols]
-        data_to_plot = []
-        labels = []
-        for model in model_list:
-            v = results.get(model, {}).get(roi_name, np.array([]))
-            if len(v) > 0:
-                data_to_plot.append(v)
-                labels.append(model)
-
-        bp = ax.boxplot(
-            data_to_plot,
-            tick_labels=labels,
-            patch_artist=True,
-            medianprops=dict(color="black", linewidth=2),
-            showfliers=False,
-            widths=0.5,
-        )
-        for patch, model in zip(bp["boxes"], labels):
-            patch.set_facecolor(colors.get(model, "gray"))
-            patch.set_alpha(0.8)
-
-        ax.set_title(roi_name.replace("_", " "), fontsize=9, fontweight="bold")
-        ax.set_ylabel("|E| (V/m)" if idx % 6 == 0 else "", fontsize=8)
-        ax.tick_params(labelsize=7)
-        ax.grid(axis="y", alpha=0.4, linestyle="--")
-
-    # Hide any unused subplot panels
-    for idx in range(n_rois, n_rows * n_cols):
-        axes[idx // n_cols][idx % n_cols].set_visible(False)
-
-    plt.tight_layout()
-    fig_path = os.path.join(OUTDIR, "roi_efield_boxplot.png")
-    plt.savefig(fig_path, dpi=150, bbox_inches="tight")
-    plt.close()
-    print(f"\nFigure saved: {fig_path}")
-
-except ImportError:
-    print("\nmatplotlib not available — skipping figure (install with pip install matplotlib)")
-
-print("\n=== 04_extract_roi_efield.py complete ===")
-print(f"Results in: {OUTDIR}/")
+print("\n" + "=" * 100)
+print("Physical consistency checks:")
+print("  - L-side ROIs (anode hemisphere) should generally show HIGHER E-field than R-side")
+print("  - MD-dMRI > ISO expected in anisotropic WM-adjacent regions (higher μFA → directed current)")
+print("  - DTI↔MD-dMRI delta largest in mesencephalon/temporal WM where μFA/FA diverge most")
+print("  - L_M1 (directly under C3 anode) should have highest E-field of all cortical ROIs")
+print("  - CAVEAT (pilot): SNc/VTA sampled from WM surrounding the nucleus, not the nucleus itself.")
+print("    CHARM at 1mm does not resolve these small nuclei. Results reflect peri-nigral WM field.")
+print("    Full-cohort analysis should use atlas-based ROI labels (e.g., DISTAL applied to m2m/).")

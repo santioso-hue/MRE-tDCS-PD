@@ -1,5 +1,5 @@
 """
-02_build_conductivity_tensor.py — Build the MD-dMRI σ ∝ ⟨D⟩ conductivity tensor (fully triaxial)
+02c_build_multicompartment_conductivity.py — Build the free-water-eliminated MD-dMRI tensor (σ ∝ ⟨D⟩_tissue)
 
 Registration strategy (consistent with the ad/rd model, preserves anisotropy):
   • eigenVALUES λ1≥λ2≥λ3 : registered as SCALARS (FLIRT trilinear) → preserves magnitude
@@ -12,7 +12,7 @@ Reconstruct (T1 space):  ⟨D⟩ = Σ_k λk_T1 · v_k v_kᵀ   (k=1,2,3)
 
 Inputs (registration/, T1 space):
   lam1_T1, lam2_T1, lam3_T1 .nii.gz   — scalar eigenvalues (µm²/ms)
-  tensor_triaxial_T1.nii.gz           — vecreg-reoriented tensor (orientation frame only)
+  tensor_mc_T1.nii.gz           — vecreg-reoriented tensor (orientation frame only)
   v1_T1.nii.gz                        — validated principal direction (QA cross-check)
 
 Output:
@@ -33,10 +33,10 @@ M2M  = os.path.join(WDIR, "m2m_FullPD5")
 EPS  = 1e-3   # min eigenvalue, µm²/ms (VN-safe)
 
 print("Loading scalar eigenvalues + orientation frame...")
-lam1 = nib.load(os.path.join(RDIR, "lam1_T1.nii.gz")).get_fdata().astype(np.float64)
-lam2 = nib.load(os.path.join(RDIR, "lam2_T1.nii.gz")).get_fdata().astype(np.float64)
-lam3 = nib.load(os.path.join(RDIR, "lam3_T1.nii.gz")).get_fdata().astype(np.float64)
-timg = nib.load(os.path.join(RDIR, "tensor_triaxial_T1.nii.gz"))
+lam1 = nib.load(os.path.join(RDIR, "lam1_mc_T1.nii.gz")).get_fdata().astype(np.float64)
+lam2 = nib.load(os.path.join(RDIR, "lam2_mc_T1.nii.gz")).get_fdata().astype(np.float64)
+lam3 = nib.load(os.path.join(RDIR, "lam3_mc_T1.nii.gz")).get_fdata().astype(np.float64)
+timg = nib.load(os.path.join(RDIR, "tensor_mc_T1.nii.gz"))
 t = timg.get_fdata().astype(np.float64)
 affine = timg.affine
 
@@ -123,8 +123,8 @@ ang = np.degrees(np.arccos(np.clip(np.abs(np.sum(v1[mref]*vr,1)),0,1)))
 print(f"Principal eigenvector vs validated v1_T1: median={np.median(ang):.2f}°, within15°={np.mean(ang<15)*100:.1f}%")
 
 # Canonical MD-dMRI conductivity tensor (replaces the earlier cylindrical ad/rd form).
-out_path = os.path.join(WDIR, "tensor_MD_dMRI.nii.gz")
+out_path = os.path.join(WDIR, "tensor_MD_dMRI_mc.nii.gz")
 hdr = timg.header.copy(); hdr.set_data_shape(out.shape); hdr.set_data_dtype(np.float32)
 nib.save(nib.Nifti1Image(out, affine, hdr), out_path)
 print(f"\nSaved: {out_path}")
-print("Next: run 03_run_mddmri_only.py (SimNIBS anisotropy_type='vn').")
+print("Next: run the mc simulation (SimNIBS anisotropy_type='vn').")

@@ -11,9 +11,11 @@ dps.mat is a MATLAB struct: mat['dps'][0,0] gives the struct fields.
   .MD  — shape (96, 96, 48), float32, mean diffusivity
   .mask — shape (96, 96, 48), uint8, QTI brain mask
 
-NOTE: dps['mdxx'], dps['mdyy'], etc. are ALL ZEROS for this pilot — the mean
-diffusion tensor components were not computed. We must use the prolate approximation
-(v1 eigenvector only) in 02_build_conductivity_tensor.py.
+NOTE (corrected): dps['mdxx']..['mdyz'] are NOT zero — they hold the full mean
+diffusion tensor ⟨D⟩ in SI units (m²/s, ~1.5e-9), which earlier rounded to 0.000 at
+display precision. The MD-dMRI model (01d/02) uses them directly (×1e9 → µm²/ms).
+This v1 (principal eigenvector) is still used for the cylindrical ad/rd model and as
+the registration QA reference (validated to 18° median vs dwi2cond V1 in core WM).
 
 The output NIfTI uses the same affine as dtd_covariance_C_mu.nii.gz (dMRI space).
 vecreg will rotate the direction vectors when transforming to T1 space.
