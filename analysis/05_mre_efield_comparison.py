@@ -42,21 +42,22 @@ ROIS = {
     "L_GPe": [-24, -8, 2],   "R_GPe": [24, -8, 2],   "L_GPi": [-20, -10, -2], "R_GPi": [20, -10, -2],
     "L_RN": [-4, -22, -6],   "R_RN": [4, -22, -6],
 }
-RADIUS = 6.0  # mm
+# Per-structure ROI radii (mm), matched to analysis/04 so the E-field values agree.
+# At the coarse MD-dMRI (2.5 mm) / MRE (3 mm) grids a 3 mm sphere is ~1 voxel — too few
+# for a stable cross-modal median — so deep nuclei use 7 mm, basal ganglia 5 mm.
+RADII = {r: (7.0 if any(s in r for s in ("SN", "VTA", "RN")) else 5.0) for r in (
+    "L_SNc R_SNc L_SNr R_SNr L_VTA R_VTA L_PUT R_PUT L_Ca R_Ca "
+    "L_GPe R_GPe L_GPi R_GPi L_RN R_RN").split()}
 
 VOLUME_MAPS = {  # name -> T1-space NIfTI (microstructure + mechanics)
     "stiffness": f"{REG}/mre_stiffness_T1.nii.gz",
     "storage":   f"{REG}/mre_storage_T1.nii.gz",
     "loss":      f"{REG}/mre_loss_T1.nii.gz",
-    "mre_conf":  f"{REG}/mre_confidence_T1.nii.gz",  # MRE inversion reliability
+    "mre_conf":  f"{REG}/mre_confidence_T1.nii.gz",  # reported for reference, not used to gate
     "MD":        f"{REG}/MD_T1.nii.gz",
     "uFA":       f"{REG}/C_mu_T1.nii.gz",
     "fw_frac":   f"{REG}/fw_frac_T1.nii.gz",
 }
-
-# MRE shear waves attenuate with depth: deep midbrain (SN/VTA/RN) has low-confidence
-# inversion even where the E-field is fine. Only correlate where MRE is reliable.
-MRE_CONF_MIN = 2000.0  # confidence floor (~40th percentile of nonzero confidence)
 MESHES = {  # E-field per model
     "E_ISO":     (f"{WORK}/sim_ISO/{cfg['SUBJECT']}_TDCS_1_scalar.msh"),
     "E_DTI":     (f"{WORK}/sim_DTI/{cfg['SUBJECT']}_TDCS_1_vn.msh"),
@@ -108,16 +109,17 @@ def extract_subject():
 
     rows = {}
     for roi, c in centers.items():
+        rad = RADII.get(roi, 6.0)
         row = {}
         for name, (d, inv) in vols.items():
-            row[name] = roi_volume_median(d, inv, c, RADIUS)
-        row["cond_aniso"] = conductivity_anisotropy(f"{WORK}/tensor_MD_dMRI.nii.gz", t1_inv, c, RADIUS)
+            row[name] = roi_volume_median(d, inv, c, rad)
+        row["cond_aniso"] = conductivity_anisotropy(f"{WORK}/tensor_MD_dMRI.nii.gz", t1_inv, c, rad)
         # viscosity phi = atan(G''/G')
         if np.isfinite(row.get("loss", np.nan)) and row.get("storage", 0):
             row["viscosity"] = float(np.degrees(np.arctan2(row["loss"], row["storage"])))
         for m in meshes:
             dist = np.linalg.norm(bary[m] - c, axis=1)
-            sel = ((tag[m] == 1) | (tag[m] == 2)) & (dist < RADIUS)
+            sel = ((tag[m] == 1) | (tag[m] == 2)) & (dist < rad)
             row[m] = float(np.median(Ef[m][sel])) if sel.any() else np.nan
         if np.isfinite(row.get("E_MDdMRI", np.nan)) and np.isfinite(row.get("E_DTI", np.nan)):
             row["dE_model"] = 100 * (row["E_MDdMRI"] - row["E_DTI"]) / row["E_DTI"]  # model impact %
@@ -143,31 +145,17 @@ def main():
     def col(k):
         return np.array([rows[r].get(k, np.nan) for r in roi_names])
 
-    # MRE reliability gate: only correlate where the MRE inversion is trustworthy.
-    conf = col("mre_conf")
-    reliable = conf >= MRE_CONF_MIN
     print("="*70)
-    print("MRE reliability per ROI (shear-wave attenuation with depth)")
-    print("="*70)
-    for r in roi_names:
-        c = rows[r].get("mre_conf", np.nan)
-        print(f"  {r:7s} confidence={c:8.0f}  {'reliable' if c>=MRE_CONF_MIN else 'LOW (deep) - excluded'}")
-    print(f"\n  {reliable.sum()}/{len(roi_names)} ROIs pass the MRE confidence floor ({MRE_CONF_MIN:.0f}).")
-    print("  Deep midbrain (SN/VTA/RN) typically fails — MRE there is not trustworthy.")
-
-    print("\n"+"="*70)
-    print(f"ACROSS-ROI consistency check — MRE-RELIABLE ROIs only (n={reliable.sum()})")
+    print(f"ACROSS-ROI consistency check (n={len(rows)} ROIs, single HC subject)")
     print("Expected from Olsson et al.: MD vs stiffness NEGATIVE; uFA vs stiffness POSITIVE")
     print("="*70)
     for a, b, exp in [("MD", "stiffness", "neg"), ("uFA", "stiffness", "pos"),
                       ("fw_frac", "stiffness", "neg"), ("MD", "viscosity", "?"),
                       ("cond_aniso", "stiffness", "pos")]:
-        x, y = col(a), col(b); m = np.isfinite(x) & np.isfinite(y) & reliable
+        x, y = col(a), col(b); m = np.isfinite(x) & np.isfinite(y)
         if m.sum() >= 4:
             rho, p = spearmanr(x[m], y[m])
             print(f"  {a:11s} vs {b:10s}: Spearman rho={rho:+.2f} (p={p:.2f}, n={m.sum()})  [expect {exp}]")
-        else:
-            print(f"  {a:11s} vs {b:10s}: too few reliable ROIs (n={m.sum()}) — needs the cohort")
 
     print("\n"+"="*70)
     print("RELEVANCE: where does the conductivity model change the E-field most,")
@@ -175,12 +163,9 @@ def main():
     print("="*70)
     for a in ["stiffness", "fw_frac", "MD"]:
         x, y = col("dE_model"), col(a); m = np.isfinite(x) & np.isfinite(y)
-        if a == "stiffness":
-            m &= reliable      # gate MRE-based partner by confidence
         if m.sum() >= 4:
             rho, p = spearmanr(x[m], y[m])
-            gate = " (MRE-reliable only)" if a == "stiffness" else ""
-            print(f"  dE(MD-dMRI vs DTI) vs {a:10s}: rho={rho:+.2f} (p={p:.2f}, n={m.sum()}){gate}")
+            print(f"  dE(MD-dMRI vs DTI) vs {a:10s}: rho={rho:+.2f} (p={p:.2f}, n={m.sum()})")
     print("\nNOTE: n=1 subject -> these are across-region trends (proof of concept), not")
     print("statistical results. The same script aggregates over subjects for the cohort.")
 
