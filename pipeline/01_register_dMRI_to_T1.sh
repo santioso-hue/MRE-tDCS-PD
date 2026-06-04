@@ -1,7 +1,7 @@
 #!/bin/bash
 # Step 1: Register MD-dMRI outputs (C_mu, MD, mask) to T1 space using FSL FLIRT
 #
-# MUST run AFTER charm — uses m2m_FullPD5/T1.nii.gz as the registration target
+# MUST run AFTER charm — uses m2m_${SUBJECT}/T1.nii.gz as the registration target
 # so everything lives in the same coordinate space as the FEM mesh.
 #
 # Usage: bash 01_register_dMRI_to_T1.sh
@@ -9,17 +9,19 @@
 
 set -e
 
-export FSLDIR=~/fsl
-export PATH=$FSLDIR/bin:$PATH
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../config/config.sh"
+export FSLDIR
+export PATH="$SIMNIBS_BIN:$FSLDIR/bin:$PATH"
 export FSLOUTPUTTYPE=NIFTI_GZ
 
-WDIR="/Users/santi/Documents/MRE_tDCS_PD/FullPD5_segmentation"
-NDIR="/Users/santi/Downloads/FullPD5_forSantiago/FullPD5/NiiFiles"
-FDIR="/Users/santi/Downloads/FullPD5_forSantiago/FullPD5/fit"
+WDIR="$WORK_DIR"
+NDIR="$NII_DIR"
+FDIR="$FIT_DIR"
 
 # T1 reference: use the bias-corrected T1 from CHARM output for consistency
 # with the FEM mesh coordinate space
-T1_REF="$WDIR/m2m_FullPD5/T1.nii.gz"
+T1_REF="$M2M_DIR/T1.nii.gz"
 if [ ! -f "$T1_REF" ]; then
     echo "ERROR: $T1_REF not found. Run CHARM first."
     exit 1
@@ -30,7 +32,7 @@ cd "$WDIR/registration"
 
 echo "=== Step 1: Extract b=0 from dMRI_Spherical (registration source) ==="
 # Volume 0 of dMRI_Spherical is b=0 — same space as the QTI fit/ outputs
-fslroi "$NDIR/FullPD5_WIP_dMRI_Spherical_medium_20230110134105_501.nii.gz" \
+fslroi "$STE_B0_NII" \
        b0_spherical.nii.gz 0 1
 echo "  b0 extracted: $(fslinfo b0_spherical.nii.gz | grep -E 'dim[1-4]|pixdim[1-4]' | head -8)"
 
@@ -55,13 +57,13 @@ echo "  VISUALLY CHECK this registration in FSLeyes before proceeding!"
 echo ""
 echo "=== Step 3a: Extract μFA (ufa), MD, signaniso from dps.mat (QA/reporting) ==="
 # Use dps.mat fields directly (ufa, MD already zero-masked → FLIRT-safe).
-~/Applications/SimNIBS-4.6/bin/simnibs_python "$WDIR/scripts/01c_save_dps_niftis.py"
+"$SIMNIBS_BIN/simnibs_python" "$SCRIPT_DIR/01c_save_dps_niftis.py"
 
 echo ""
 echo "=== Step 3b: Extract full triaxial mean tensor ⟨D⟩ + eigenvalues from dps.mat ==="
 # dps['mdxx'..'mdyz'] hold ⟨D⟩ in SI units (×1e9 → µm²/ms). 01d writes the 6-comp
 # tensor (for vecreg orientation) and λ1≥λ2≥λ3 scalar maps (for magnitude).
-~/Applications/SimNIBS-4.6/bin/simnibs_python "$WDIR/scripts/01d_save_triaxial_tensor.py"
+"$SIMNIBS_BIN/simnibs_python" "$SCRIPT_DIR/01d_save_triaxial_tensor.py"
 
 echo ""
 echo "=== Step 4: Transform scalar maps to T1 (FLIRT trilinear / nearestneighbour) ==="
@@ -84,7 +86,7 @@ flirt -in signaniso_dMRI.nii.gz -ref "$T1_REF" -out signaniso_T1.nii.gz \
 
 echo ""
 echo "=== Step 5: Save principal eigenvectors from dps.mat as NIfTI ==="
-~/Applications/SimNIBS-4.6/bin/simnibs_python "$WDIR/scripts/01b_save_v1_nifti.py"
+"$SIMNIBS_BIN/simnibs_python" "$SCRIPT_DIR/01b_save_v1_nifti.py"
 
 echo ""
 echo "=== Step 6: Reorient direction data to T1 with vecreg ==="

@@ -23,13 +23,18 @@ D-anisotropy) + Güllmar 2010 / Rullmann 2009 volume normalization (SimNIBS 'vn'
 Full triaxial: retains λ2≠λ3 and gives oblate voxels their correct disc shape.
 """
 
+import os
+import sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _config import cfg  # noqa: E402  (paths/subject from config/config.sh)
+
 import numpy as np
 import nibabel as nib
 import os
 
-WDIR = "/Users/santi/Documents/MRE_tDCS_PD/FullPD5_segmentation"
+WDIR = cfg["WORK_DIR"]
 RDIR = os.path.join(WDIR, "registration")
-M2M  = os.path.join(WDIR, "m2m_FullPD5")
+M2M  = cfg["M2M_DIR"]
 EPS  = 1e-3   # min eigenvalue, µm²/ms (VN-safe)
 
 print("Loading scalar eigenvalues + orientation frame...")

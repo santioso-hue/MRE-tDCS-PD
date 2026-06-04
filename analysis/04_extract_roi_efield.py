@@ -26,13 +26,18 @@ Usage:
   ~/Applications/SimNIBS-4.6/bin/simnibs_python scripts/04_extract_roi_efield.py
 """
 
+import os
+import sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _config import cfg  # noqa: E402  (paths/subject from config/config.sh)
+
 import numpy as np
 import simnibs
 from simnibs import mesh_io
 import os
 
-WDIR    = "/Users/santi/Documents/MRE_tDCS_PD/FullPD5_segmentation"
-SUBPATH = os.path.join(WDIR, "m2m_FullPD5")
+WDIR    = cfg["WORK_DIR"]
+SUBPATH = cfg["M2M_DIR"]
 
 # ── ROI definitions (MNI152 space, mm) ───────────────────────────────────────
 # References: Ewert et al. 2018 (DISTAL), Pauli et al. 2018 (CIT168 7T atlas)
@@ -81,10 +86,10 @@ TISSUE_TAGS = (1, 2)
 
 # ── Simulation mesh files ─────────────────────────────────────────────────────
 MODELS = {
-    "ISO":         os.path.join(WDIR, "sim_ISO",         "FullPD5_TDCS_1_scalar.msh"),
-    "DTI":         os.path.join(WDIR, "sim_DTI",         "FullPD5_TDCS_1_vn.msh"),  # dwi2cond
-    "MD-dMRI":     os.path.join(WDIR, "sim_MD_dMRI",     "FullPD5_TDCS_1_vn.msh"),  # σ∝⟨D⟩ (Model 3)
-    "MD-dMRI-FWE": os.path.join(WDIR, "sim_MD_dMRI_mc",  "FullPD5_TDCS_1_vn.msh"),  # free-water-eliminated (Model 4)
+    "ISO":         os.path.join(WDIR, "sim_ISO",         f"{cfg['SUBJECT']}_TDCS_1_scalar.msh"),
+    "DTI":         os.path.join(WDIR, "sim_DTI",         f"{cfg['SUBJECT']}_TDCS_1_vn.msh"),  # dwi2cond
+    "MD-dMRI":     os.path.join(WDIR, "sim_MD_dMRI",     f"{cfg['SUBJECT']}_TDCS_1_vn.msh"),  # σ∝⟨D⟩ (Model 3)
+    "MD-dMRI-FWE": os.path.join(WDIR, "sim_MD_dMRI_mc",  f"{cfg['SUBJECT']}_TDCS_1_vn.msh"),  # free-water-eliminated (Model 4)
 }
 
 
@@ -120,7 +125,7 @@ mni_coords  = np.array(list(ROIS.values()), dtype=float)
 try:
     subj_coords = simnibs.mni2subject_coords(mni_coords, SUBPATH)
     roi_centers = {name: subj_coords[i] for i, name in enumerate(ROIS)}
-    print(f"  MNI → subject transform applied via m2m_FullPD5/")
+    print(f"  MNI → subject transform applied via m2m_<subject>/")
 except Exception as e:
     print(f"  WARNING: mni2subject_coords failed ({e})")
     print(f"  Falling back to identity (MNI = subject space — approximate only)")

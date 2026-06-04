@@ -21,13 +21,18 @@ The output NIfTI uses the same affine as dtd_covariance_C_mu.nii.gz (dMRI space)
 vecreg will rotate the direction vectors when transforming to T1 space.
 """
 
+import os
+import sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _config import cfg  # noqa: E402  (paths/subject from config/config.sh)
+
 import numpy as np
 import nibabel as nib
 import scipy.io
 import os
 
-FDIR  = "/Users/santi/Downloads/FullPD5_forSantiago/FullPD5/fit"
-RDIR  = "/Users/santi/Documents/MRE_tDCS_PD/FullPD5_segmentation/registration"
+FDIR  = cfg["FIT_DIR"]
+RDIR  = cfg["REG_DIR"]
 
 # ── Load eigenvectors from dps.mat (nested MATLAB struct) ─────────────────────
 print("Loading dps.mat...")

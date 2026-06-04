@@ -37,10 +37,15 @@ LIMITATIONS (methods): free-water elimination assumes the CSF compartment should
 
 Output (dMRI space): registration/tensor_mc_dMRI.nii.gz + lam{1,2,3}_mc_dMRI.nii.gz
 """
+
+import os
+import sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _config import cfg  # noqa: E402  (paths/subject from config/config.sh)
 import numpy as np, nibabel as nib, scipy.io, os
 
-FDIR="/Users/santi/Downloads/FullPD5_forSantiago/FullPD5/fit"
-RDIR="/Users/santi/Documents/MRE_tDCS_PD/FullPD5_segmentation/registration"
+FDIR=cfg["FIT_DIR"]
+RDIR=cfg["REG_DIR"]
 os.makedirs(RDIR, exist_ok=True)
 FT_MIN=0.30   # min tissue fraction to trust free-water elimination
 
