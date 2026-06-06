@@ -1,204 +1,145 @@
 """
-03_run_simulations.py — Run all three tDCS models for FullPD5
+03_run_simulations.py — Run the tDCS conductivity-model simulations for one subject.
 
-Three-model design:
-  ISO     — Isotropic scalar conductivity (literature values, no diffusion weighting)
-  DTI     — Anisotropic, FA-based tensors from dwi2cond (classical approach)
-  MD-dMRI — Anisotropic, μFA-based tensors from QTI fit (novel contribution)
+Models (data-driven, see MODELS below):
+  ISO      — isotropic scalar conductivity (literature values)
+  DTI      — anisotropic 'vn' from dwi2cond (FA-based classical baseline)
+  MD-dMRI  — anisotropic 'vn', σ ∝ ⟨D⟩_tissue free-water-eliminated QTI tensor
+             (tensor_MD_dMRI.nii.gz; the single novel MD-dMRI model)
 
-Montage: C3 (anode, left M1) → Fp2 (cathode, right supraorbital), 2 mA
-Same as sub04 reference simulation.
+The plain mean tensor ⟨D⟩ (no free-water elimination) is the degenerate sensitivity case, built as
+tensor_MD_dMRI_meanD.nii.gz via `02_build_conductivity_tensor.py --meanD`; add it as a MODELS entry
+below only if a ⟨D⟩-vs-FWE sensitivity simulation is wanted.
 
-Requirements:
-  - m2m_<subject>/ must exist (run CHARM first)
-  - m2m_<subject>/dMRI_MNI_reg/ must exist (run dwi2cond first, for DTI model)
-  - tensor_MD_dMRI.nii.gz must exist (run 02_build_conductivity_tensor.py first)
+Montage: C3 (anode, left M1) → Fp2 (cathode, right supraorbital), 2 mA.
 
-Usage:
-  cd /Users/santi/Documents/MRE_tDCS_PD/FullPD5_segmentation
-  ~/Applications/SimNIBS-4.6/bin/simnibs_python scripts/03_run_simulations.py
+Usage (run in WORK_DIR; SimNIBS resolves subpath/pathfem relative to CWD):
+  simnibs_python pipeline/03_run_simulations.py                # all models
+  simnibs_python pipeline/03_run_simulations.py MD-dMRI        # re-run a single model only
+  simnibs_python pipeline/03_run_simulations.py ISO DTI        # a subset
 
-NOTE: Do NOT pass fn_tensor_nifti with tms_flex_opt/tes_flex_opt — documented SimNIBS bug.
+Requirements: m2m_<subject>/ (CHARM); dwi2cond output (DTI); tensor_MD_dMRI.nii.gz (02).
+NOTE: do NOT pass fn_tensor_nifti with tms_flex_opt/tes_flex_opt — documented SimNIBS bug.
 """
-
 import os
 import sys
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _config import cfg  # noqa: E402  (paths/subject from config/config.sh)
 
-import simnibs
-import os
-import nibabel as nib
-import numpy as np
-
-# ── macOS Apple Silicon: prevent OpenMP crash ─────────────────────────────────
-# Must be set BEFORE any SimNIBS import triggers OpenMP initialisation.
-# These are no-ops on Linux/Windows.
+# macOS Apple Silicon: prevent the OpenMP duplicate-runtime crash. MUST be set BEFORE
+# `import simnibs` triggers OpenMP initialisation. No-ops on Linux/Windows.
 os.environ.setdefault("OMP_NUM_THREADS", "1")
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 
-WDIR    = cfg["WORK_DIR"]
-SUBPATH = f'm2m_{cfg["SUBJECT"]}'
-TENSOR  = os.path.join(WDIR, "tensor_MD_dMRI.nii.gz")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _config import cfg  # noqa: E402  (paths/subject from config/config.sh)
 
-# SimNIBS resolves subpath and pathfem relative to CWD — must be in WDIR
-os.chdir(WDIR)
-print(f"Working directory: {os.getcwd()}")
+import simnibs            # noqa: E402
+import nibabel as nib     # noqa: E402
+import numpy as np        # noqa: E402
 
-# ── Pre-flight checks ─────────────────────────────────────────────────────────
-if not os.path.isdir(SUBPATH):
-    raise FileNotFoundError(f"Head model not found: {SUBPATH}  — run CHARM first.")
+WDIR      = cfg["WORK_DIR"]
+SUBPATH   = f'm2m_{cfg["SUBJECT"]}'
+TENSOR_MD = os.path.join(WDIR, "tensor_MD_dMRI.nii.gz")   # canonical = σ ∝ ⟨D⟩_tissue (free-water-eliminated)
 
-if not os.path.exists(TENSOR):
-    raise FileNotFoundError(f"Tensor file not found: {TENSOR}  — run 02_build_conductivity_tensor.py first.")
+# Anisotropy caps applied IDENTICALLY to every 'vn' (anisotropic) model so a DTI↔MD-dMRI E-field
+# difference reflects the tensor source, not the clip. SimNIBS has TWO separate caps:
+#   aniso_maxratio = 10 : eigenvalue RATIO cap (the BINDING one), top of the 7–10:1 ex vivo WM
+#       range (Nicholson 1965 Exp Neurol 13:386; Ranck & BeMent 1965 Exp Neurol 11:451).
+#   aniso_maxcond  = 2  : eigenvalue MAGNITUDE cap (S/m, SimNIBS default), non-binding under vn.
+ANISO_MAXRATIO = 10
+ANISO_MAXCOND  = 2
 
-# Validate tensor shape and affine match the subject T1
-_t = nib.load(TENSOR)
-_t1 = nib.load(os.path.join(SUBPATH, "T1.nii.gz"))
-assert _t.shape[:3] == _t1.shape[:3], \
-    f"Tensor spatial shape {_t.shape[:3]} ≠ T1 shape {_t1.shape[:3]} — affine mismatch!"
-assert _t.shape[3] == 6, \
-    f"Tensor 4th dim = {_t.shape[3]}, expected 6 (FSL dtifit order)"
-assert np.allclose(_t.affine, _t1.affine, atol=1e-3), \
-    "Tensor affine does not match T1 affine — tensor may be in wrong space!"
-print(f"Tensor validation: shape={_t.shape} ✓  affine matches T1 ✓")
-del _t, _t1
+# Data-driven model table. `tensor` = explicit conductivity-tensor NIfTI set on the SESSION;
+# None → ISO (scalar) or DTI ('vn' uses the dwi2cond tensor SimNIBS finds inside m2m).
+MODELS = [
+    {"name": "ISO",     "pathfem": "sim_ISO",     "anisotropy": "scalar", "tensor": None},
+    {"name": "DTI",     "pathfem": "sim_DTI",     "anisotropy": "vn",     "tensor": None},
+    {"name": "MD-dMRI", "pathfem": "sim_MD_dMRI", "anisotropy": "vn",     "tensor": TENSOR_MD},
+]
+
 
 def make_electrode_pair(tdcs):
-    """C3 anode, Fp2 cathode — 5×5 cm rectangular pads, 2 mA."""
-    anode           = tdcs.add_electrode()
-    anode.channelnr  = 1
-    anode.centre     = "C3"
-    anode.shape      = "rect"
-    anode.dimensions = [50, 50]
-    anode.thickness  = 4
-
-    cathode           = tdcs.add_electrode()
-    cathode.channelnr  = 2
-    cathode.centre     = "Fp2"
-    cathode.shape      = "rect"
-    cathode.dimensions = [50, 50]
-    cathode.thickness  = 4
+    """C3 anode, Fp2 cathode — 5×5 cm rectangular pads."""
+    for channel, centre in ((1, "C3"), (2, "Fp2")):
+        e = tdcs.add_electrode()
+        e.channelnr  = channel
+        e.centre     = centre
+        e.shape      = "rect"
+        e.dimensions = [50, 50]
+        e.thickness  = 4
     return tdcs
 
 
-# ── ISO Model ─────────────────────────────────────────────────────────────────
-print("=" * 60)
-print("MODEL 1: ISO (isotropic scalar conductivity)")
-print("=" * 60)
-
-s_iso = simnibs.sim_struct.SESSION()
-s_iso.subpath  = SUBPATH
-s_iso.pathfem  = "sim_ISO"
-
-tdcs_iso = s_iso.add_tdcslist()
-tdcs_iso.currents        = [0.002, -0.002]
-tdcs_iso.anisotropy_type = "scalar"       # isotropic literature values
-make_electrode_pair(tdcs_iso)
-
-_errors = {}
-
-try:
-    simnibs.run_simnibs(s_iso)
-    print("ISO simulation complete -> sim_ISO/\n")
-except Exception as e:
-    _errors["ISO"] = e
-    print(f"ERROR in ISO simulation: {e}\n  Continuing with remaining models...\n")
+def validate_tensor(path):
+    """Assert the conductivity tensor is T1-space, [X,Y,Z,6] FSL order. Aborts on mismatch."""
+    t  = nib.load(path)
+    t1 = nib.load(os.path.join(SUBPATH, "T1.nii.gz"))
+    assert t.shape[:3] == t1.shape[:3], f"Tensor shape {t.shape[:3]} ≠ T1 {t1.shape[:3]} (wrong space)"
+    assert t.shape[3] == 6, f"Tensor 4th dim {t.shape[3]} ≠ 6 (FSL dtifit order)"
+    assert np.allclose(t.affine, t1.affine, atol=1e-3), "Tensor affine ≠ T1 — tensor in wrong space!"
+    print(f"  tensor validation: shape={t.shape} ✓  affine matches T1 ✓")
 
 
-# ── DTI Model ─────────────────────────────────────────────────────────────────
-print("=" * 60)
-print("MODEL 2: DTI (FA-based tensors from dwi2cond)")
-print("=" * 60)
-
-s_dti = simnibs.sim_struct.SESSION()
-s_dti.subpath  = SUBPATH
-s_dti.pathfem  = "sim_DTI"
-
-tdcs_dti = s_dti.add_tdcslist()
-tdcs_dti.currents        = [0.002, -0.002]
-tdcs_dti.anisotropy_type = "vn"           # volume-normalised from dwi2cond output
-# Match MD-dMRI eigenvalue cap for a fair model comparison.
-# max_cond=3 (effective ratio 5.20:1) is justified from ex vivo WM measurements
-# of 7–10:1 (Nicholson 1965 Exp Neurol 13:386; Ranck & BeMent 1965 Exp Neurol 11:451).
-# In practice this barely changes DTI results: median DTI eigenvalue ratio is ~1.46:1,
-# far below both caps, so almost no DTI voxels are affected. But without this
-# matched cap the DTI↔MD-dMRI E-field difference cannot be attributed cleanly to
-# the tensor source vs. the clipping threshold.
-tdcs_dti.aniso_maxcond   = 4   # 4^(3/2) = 8.0:1 — within ex vivo WM benchmark 7–10:1
-make_electrode_pair(tdcs_dti)
-
-try:
-    simnibs.run_simnibs(s_dti)
-    print("DTI simulation complete -> sim_DTI/\n")
-except Exception as e:
-    _errors["DTI"] = e
-    print(f"ERROR in DTI simulation: {e}\n  Continuing with remaining models...\n")
-
-
-# ── MD-dMRI Model ─────────────────────────────────────────────────────────────
-print("=" * 60)
-print("MODEL 3: MD-dMRI (μFA-based tensors — novel contribution)")
-print("=" * 60)
-
-if not os.path.exists(TENSOR):
-    raise FileNotFoundError(
-        f"Tensor file not found: {TENSOR}\n"
-        "Run 02_build_conductivity_tensor.py first."
-    )
-
-s_mddmri = simnibs.sim_struct.SESSION()
-s_mddmri.subpath       = SUBPATH
-s_mddmri.pathfem       = "sim_MD_dMRI"
-# CRITICAL: set fname_tensor on the SESSION, NOT fn_tensor_nifti on the TDCSLIST.
-# SESSION._prepare() unconditionally overwrites PL.fn_tensor_nifti with
-# self.fname_tensor (sim_struct.py line 209), so the TDCSLIST attribute is ignored.
-s_mddmri.fname_tensor  = TENSOR
-
-tdcs_mddmri = s_mddmri.add_tdcslist()
-tdcs_mddmri.currents         = [0.002, -0.002]
-tdcs_mddmri.anisotropy_type  = "vn"        # volume-normalised, tensor from file
-# aniso_maxcond=4 (effective ratio 8.00:1 after VN normalization) — identical to
-# the DTI model above.  Using the same cap for both models is essential for a fair
-# comparison: any E-field difference between DTI and MD-dMRI reflects the tensor
-# source, not a difference in SimNIBS clipping behaviour.
-# Physiological justification: ex vivo WM σ_∥/σ_⊥ = 7–10:1 (Nicholson 1965 Exp
-# Neurol 13:386; Ranck & BeMent 1965 Exp Neurol 11:451); 8.0:1 sits within this
-# validated range and is the most faithful representation we can achieve.
-# No μFA pre-cap is applied in 02_build_conductivity_tensor.py; the fraction of
-# voxels clipped here is reported in that script's console output and disclosed in
-# the methods section as a known limitation of sparse QTI acquisition (38 volumes).
-# ISO is isotropic (max_cond irrelevant).
-tdcs_mddmri.aniso_maxcond    = 4
-make_electrode_pair(tdcs_mddmri)
-
-try:
-    simnibs.run_simnibs(s_mddmri)
-    print("MD-dMRI simulation complete -> sim_MD_dMRI/\n")
-except Exception as e:
-    _errors["MD-dMRI"] = e
-    print(f"ERROR in MD-dMRI simulation: {e}\n")
+def run_model(m):
+    """Build and run one SESSION for model dict `m`. Returns None on success, else the exception."""
+    print("=" * 60); print(f"MODEL: {m['name']}  ->  {m['pathfem']}"); print("=" * 60)
+    s = simnibs.sim_struct.SESSION()
+    s.subpath = SUBPATH
+    s.pathfem = m["pathfem"]
+    if m["tensor"] is not None:
+        if not os.path.exists(m["tensor"]):
+            return FileNotFoundError(f"{m['tensor']} not found — run 02_build_conductivity_tensor.py")
+        validate_tensor(m["tensor"])
+        # CRITICAL: set fname_tensor on the SESSION, NOT fn_tensor_nifti on the TDCSLIST.
+        # SESSION._prepare() unconditionally overwrites PL.fn_tensor_nifti = self.fname_tensor
+        # (sim_struct.py ~line 209), so a TDCSLIST attribute is silently ignored.
+        s.fname_tensor = m["tensor"]
+    tdcs = s.add_tdcslist()
+    tdcs.currents        = [0.002, -0.002]        # 2 mA
+    tdcs.anisotropy_type = m["anisotropy"]
+    if m["anisotropy"] == "vn":
+        tdcs.aniso_maxratio = ANISO_MAXRATIO
+        tdcs.aniso_maxcond  = ANISO_MAXCOND
+    make_electrode_pair(tdcs)
+    try:
+        simnibs.run_simnibs(s)
+        print(f"{m['name']} complete -> {m['pathfem']}/\n")
+        return None
+    except Exception as e:                          # noqa: BLE001 — report and continue other models
+        print(f"ERROR in {m['name']}: {e}\n")
+        return e
 
 
-# ── Final status ──────────────────────────────────────────────────────────────
-print("=" * 60)
-_completed = [m for m in ["ISO", "DTI", "MD-dMRI"] if m not in _errors]
-_failed    = list(_errors.keys())
+def main():
+    if not os.path.isdir(os.path.join(WDIR, SUBPATH)):
+        raise FileNotFoundError(f"Head model not found: {SUBPATH} — run CHARM first.")
+    os.chdir(WDIR)                                   # SimNIBS resolves subpath/pathfem relative to CWD
+    print(f"Working directory: {os.getcwd()}")
 
-if _completed:
-    print(f"Completed ({len(_completed)}/3): {', '.join(_completed)}")
-    for m in _completed:
-        dirname = {"ISO": "sim_ISO", "DTI": "sim_DTI", "MD-dMRI": "sim_MD_dMRI"}[m]
-        print(f"  {WDIR}/{dirname}/")
+    # Optional CLI subset (e.g. "MD-dMRI" to re-run one model); default = all models.
+    by_name   = {m["name"]: m for m in MODELS}
+    requested = sys.argv[1:] or list(by_name)
+    unknown   = [r for r in requested if r not in by_name]
+    if unknown:
+        raise SystemExit(f"Unknown model(s) {unknown}. Choose from: {', '.join(by_name)}")
+    to_run = [by_name[r] for r in requested]
+    print(f"Running {len(to_run)} model(s): {', '.join(requested)}")
 
-if _failed:
-    print(f"\nFailed ({len(_failed)}/3): {', '.join(_failed)}")
-    for m, exc in _errors.items():
-        print(f"  {m}: {exc}")
+    errors = {m["name"]: err for m in to_run if (err := run_model(m)) is not None}
 
-if not _failed:
-    print("\nAll three simulations complete.")
-    print("Next: run 04_extract_roi_efield.py for quantitative comparison.")
-else:
-    import sys
-    sys.exit(1)   # signal failure to the shell while still having run all models
+    print("=" * 60)
+    done = [m["name"] for m in to_run if m["name"] not in errors]
+    if done:
+        print(f"Completed ({len(done)}/{len(to_run)}): {', '.join(done)}")
+        for m in to_run:
+            if m["name"] in done:
+                print(f"  {WDIR}/{m['pathfem']}/")
+    if errors:
+        print(f"\nFailed ({len(errors)}/{len(to_run)}):")
+        for name, exc in errors.items():
+            print(f"  {name}: {exc}")
+        sys.exit(1)                                  # signal failure to the shell after running all
+    print("\nAll requested simulations complete.\nNext: analysis/04_extract_roi_efield.py")
+
+
+if __name__ == "__main__":
+    main()

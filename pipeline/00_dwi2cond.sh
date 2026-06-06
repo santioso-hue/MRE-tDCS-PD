@@ -11,8 +11,10 @@
 #       eddy_correct  →  dtifit  →  nonlinear fnirt (FA→T1)  →  vecreg (tensor reorientation)
 #       →  brain-mask.
 #   The original failure was a mis-ordered manual call, not a tool bug. dwi2cond's nonlinear
-#   FA→T1 registration is more accurate than the previous 6-DOF rigid bypass; the resulting
-#   principal eigenvector validates against the QTI dps.u to ~18° median in core WM.
+#   FA→T1 registration is more accurate than the previous 6-DOF rigid bypass; its principal
+#   eigenvector agrees with the QTI dps.u to ~22° median in core WM (FA>0.5), ~30° across all WM
+#   — see tests/validate_mean_tensor.py. (Separate sDTI acquisition, so this is a moderate, not
+#   tight, agreement.)
 #
 # Prerequisites: CHARM has run (m2m_${SUBJECT}/ exists).
 # Idempotent:    skips if the coregistered tensor already exists.
@@ -69,5 +71,5 @@ dwi2cond --all "$SUBJECT" "$DWI" "$BVAL" "$BVEC"
 echo ""
 echo "dwi2cond complete."
 echo "  Tensor:  $TENSOR  (SimNIBS reads this for anisotropy_type='vn')"
-echo "  Check registration visually:  dwi2cond --check "$SUBJECT""
+echo "  Check registration visually:  dwi2cond --check $SUBJECT"
 echo "Next: run the DTI simulation (03_run_simulations.py / SimNIBS with anisotropy_type='vn')."

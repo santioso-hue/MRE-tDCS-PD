@@ -7,13 +7,22 @@
 # Usage: bash 01_register_dMRI_to_T1.sh
 # Runtime: ~2 min
 
-set -e
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../config/config.sh"
 export FSLDIR
 export PATH="$SIMNIBS_BIN:$FSLDIR/bin:$PATH"
 export FSLOUTPUTTYPE=NIFTI_GZ
+
+# Post-condition guard: assert a registration output exists and is not all-zero. A FLIRT/vecreg that
+# "succeeds" but writes an empty/zero map would otherwise flow silently into stage 02.
+require_nonzero() {
+    local f="$1"
+    [ -f "$f" ] || { echo "ERROR: expected registration output missing: $f"; exit 1; }
+    local nz; nz="$(fslstats "$f" -V | awk '{print $1}')"
+    [ "${nz:-0}" -gt 0 ] 2>/dev/null || { echo "ERROR: $f has 0 non-zero voxels — registration failed"; exit 1; }
+}
 
 WDIR="$WORK_DIR"
 NDIR="$NII_DIR"
@@ -50,6 +59,8 @@ flirt -in  b0_spherical.nii.gz \
       -searchry -20 20 \
       -searchrz -20 20 \
       -interp trilinear
+[ -s dMRI_to_T1.mat ] || { echo "ERROR: FLIRT did not produce dMRI_to_T1.mat"; exit 1; }
+require_nonzero b0_spherical_T1.nii.gz
 echo "  Transform saved: dMRI_to_T1.mat"
 echo "  Registered b0:   b0_spherical_T1.nii.gz"
 echo "  VISUALLY CHECK this registration in FSLeyes before proceeding!"
@@ -66,10 +77,17 @@ echo "=== Step 3b: Extract full triaxial mean tensor ⟨D⟩ + eigenvalues from 
 "$SIMNIBS_BIN/simnibs_python" "$SCRIPT_DIR/01d_save_triaxial_tensor.py"
 
 echo ""
+echo "=== Step 3c: Free-water-eliminated tissue tensor ⟨D⟩_tissue (the canonical MD-dMRI model) ==="
+# 01e writes the FWE 6-comp tensor (tensor_mc) + λ1≥λ2≥λ3 scalar maps (lam{1,2,3}_mc), removing the
+# QTI free-water compartment. These feed 02 (default model=fwe); plain ⟨D⟩ from 01d is the sensitivity.
+"$SIMNIBS_BIN/simnibs_python" "$SCRIPT_DIR/01e_save_multicompartment_tensor.py"
+
+echo ""
 echo "=== Step 4: Transform scalar maps to T1 (FLIRT trilinear / nearestneighbour) ==="
 # Eigenvalues λ1,λ2,λ3 registered as SCALARS — preserves anisotropy magnitude
 # (whole-tensor interpolation would dilute it). vecreg below carries orientation.
-for L in lam1 lam2 lam3; do
+# Both the FWE (lam*_mc, canonical) and plain ⟨D⟩ (lam*, sensitivity) eigenvalue maps are registered.
+for L in lam1 lam2 lam3 lam1_mc lam2_mc lam3_mc; do
   flirt -in "${L}_dMRI.nii.gz" -ref "$T1_REF" -out "${L}_T1.nii.gz" \
         -applyxfm -init dMRI_to_T1.mat -interp trilinear
 done
@@ -83,6 +101,9 @@ flirt -in dMRI_mask.nii.gz     -ref "$T1_REF" -out dMRI_mask_T1.nii.gz \
 # signaniso is discrete {-1,0,+1} — nearestneighbour preserves the labels.
 flirt -in signaniso_dMRI.nii.gz -ref "$T1_REF" -out signaniso_T1.nii.gz \
       -applyxfm -init dMRI_to_T1.mat -interp nearestneighbour
+for out in lam1_T1 lam2_T1 lam3_T1 lam1_mc_T1 lam2_mc_T1 lam3_mc_T1 C_mu_T1 MD_T1 dMRI_mask_T1; do
+    require_nonzero "${out}.nii.gz"
+done
 
 echo ""
 echo "=== Step 5: Save principal eigenvectors from dps.mat as NIfTI ==="
@@ -98,6 +119,12 @@ echo "  Registered principal eigenvector: v1_T1.nii.gz"
 # from the scalar maps above; principal axis is anchored to the validated v1_T1).
 vecreg -i tensor_triaxial_dMRI.nii.gz -o tensor_triaxial_T1.nii.gz -r "$T1_REF" -t dMRI_to_T1.mat
 echo "  Registered triaxial tensor frame: tensor_triaxial_T1.nii.gz"
+# FWE tissue-tensor frame (the canonical model's orientation) — same vecreg reorientation:
+vecreg -i tensor_mc_dMRI.nii.gz -o tensor_mc_T1.nii.gz -r "$T1_REF" -t dMRI_to_T1.mat
+echo "  Registered FWE tissue tensor frame: tensor_mc_T1.nii.gz"
+require_nonzero v1_T1.nii.gz
+require_nonzero tensor_triaxial_T1.nii.gz
+require_nonzero tensor_mc_T1.nii.gz
 
 echo ""
 echo "=== Registration complete ==="

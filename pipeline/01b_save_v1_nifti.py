@@ -1,7 +1,7 @@
 """
 01b_save_v1_nifti.py — Save principal eigenvectors from dps.mat as NIfTI
 
-Called automatically by 01_register_dMRI_to_T1.sh (Step 4).
+Called automatically by 01_register_dMRI_to_T1.sh (Step 5).
 
 dps.mat is a MATLAB struct: mat['dps'][0,0] gives the struct fields.
   .u   — shape (96, 96, 48, 3), complex64, principal eigenvectors of <D>
@@ -11,11 +11,12 @@ dps.mat is a MATLAB struct: mat['dps'][0,0] gives the struct fields.
   .MD  — shape (96, 96, 48), float32, mean diffusivity
   .mask — shape (96, 96, 48), uint8, QTI brain mask
 
-NOTE (corrected): dps['mdxx']..['mdyz'] are NOT zero — they hold the full mean
-diffusion tensor ⟨D⟩ in SI units (m²/s, ~1.5e-9), which earlier rounded to 0.000 at
-display precision. The MD-dMRI model (01d/02) uses them directly (×1e9 → µm²/ms).
-This v1 (principal eigenvector) is still used for the cylindrical ad/rd model and as
-the registration QA reference (validated to 18° median vs dwi2cond V1 in core WM).
+NOTE: dps['mdxx']..['mdyz'] are NOT zero — they hold the full mean diffusion tensor ⟨D⟩
+in SI units (m²/s, ~1.5e-9), which earlier rounded to 0.000 at display precision. 01d is
+the source of the mean tensor (it reconstructs ⟨D⟩ from those fields, ×1e9 → µm²/ms); the
+σ∝⟨D⟩ models are built in 02. This v1 (principal eigenvector = dps.u) anchors the
+reconstructed tensor's principal axis in 02 and is the registration QA reference: it
+agrees with the independent dwi2cond DTI V1 to ~22° median in core WM (FA>0.5).
 
 The output NIfTI uses the same affine as dtd_covariance_C_mu.nii.gz (dMRI space).
 vecreg will rotate the direction vectors when transforming to T1 space.

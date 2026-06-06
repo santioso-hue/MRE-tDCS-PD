@@ -6,14 +6,18 @@ KEY CORRECTION (supersedes the note in 01b/01c):
   stored in SI units (m²/s, ~1.5e-9). Earlier inspection mistook them for zero because
   1.5e-9 rounds to 0.000 at display precision. Multiplying by 1e9 gives µm²/ms.
 
-  Verified against dps.mat (130,643 brain voxels):
-    trace(⟨D⟩)/3 == MD            (exact; confirms it is the mean tensor)
-    λ1(⟨D⟩) == ad                 (r=0.9999; element order confirmed)
-    (λ2+λ3)/2 == rd               (r=1.0000)
-    principal eigenvector == dps.u (median 0.0°; inherits the validated orientation
-                                    that agrees with dwi2cond V1 to 18° median in core WM)
+  Verified against dps.mat (130,643 brain voxels; tests/validate_mean_tensor.py):
+    trace(⟨D⟩)/3 == MD            (max|err| 6e-7 µm²/ms; confirms it is the mean tensor)
+    λ1(⟨D⟩) == ad                 (median|err| 3e-5; a few near-degenerate outliers)
+    (λ2+λ3)/2 == rd               (median|err| 1e-5)
+    principal eigenvector == dps.u (median 0.01°)
     positive-definite              100% of brain
-    genuinely triaxial (λ2≠λ3)     88% of brain
+    genuinely triaxial (|λ2−λ3| > 0.05·MD)  93% of brain
+
+  Its principal axis (dps.u) agrees with the INDEPENDENT single-shell dwi2cond DTI V1 to a
+  median of ~22° in core WM (FA>0.5), ~30° across all WM (FA>0.3) — they share orientation only
+  moderately, so the Model-2-vs-DTI E-field difference reflects both eigenvalue and orientation
+  differences. dps.u carries its own validated orientation, so the comparison is not circular.
 
 This is the σ ∝ ⟨D⟩ conductivity model in its full triaxial form — the established
 Tuch (2001) effective-medium mapping (shared eigenvectors; conductivity anisotropy =
@@ -74,6 +78,13 @@ print(f"  λ1 vs ad:         max|err|={np.max(np.abs(l1-ad[mask])):.4f} µm²/ms
 print(f"  (λ2+λ3)/2 vs rd:  max|err|={np.max(np.abs((l2+l3)/2-rd[mask])):.4f} µm²/ms")
 print(f"  positive-definite: {100*np.mean(l3>0):.2f}%  (λ3 min={l3.min():.4f})")
 print(f"  eigenvalues µm²/ms: λ1={np.median(l1):.3f}  λ2={np.median(l2):.3f}  λ3={np.median(l3):.3f} (median)")
+
+# Abort on a broken reconstruction (unit-scale slip, mis-assembled diagonal) rather than silently
+# writing a plausible-but-wrong tensor. trace/3 == MD is a definitional identity (exact). NOTE: ad/rd
+# are the fit's CYLINDRICAL axial/radial summaries and differ from the triaxial eigenvalues by a few %
+# (max|λ1-ad|≈0.16), so they stay informational prints above rather than strict asserts.
+assert np.max(np.abs(trace_md[mask] - MD[mask])) < 1e-2, "trace/3 != MD — unit-scale or diagonal-component bug"
+assert np.mean(l3 > 0) > 0.99, "reconstructed ⟨D⟩ not positive-definite in >1% of brain — assembly bug"
 
 # ── Eigenvalue maps (scalars) — registered with trilinear to PRESERVE magnitude ─
 # Whole-tensor vecreg interpolation averages neighbouring tensors and dilutes the

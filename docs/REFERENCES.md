@@ -8,7 +8,7 @@ Organized by role in the project. All citations are used in scripts, docs, or ma
 
 **Nicholson PW (1965).** Specific impedance of cerebral white matter.
 *Experimental Neurology* 13:386–401.
-→ **Primary source for 7–10:1 WM conductivity anisotropy.** Ex vivo AC impedance measurement of corpus callosum. Reported ~9:1 longitudinal:transverse conductivity ratio. Justifies raising aniso_maxcond above SimNIBS default of 2.
+→ **Primary source for 7–10:1 WM conductivity anisotropy.** Ex vivo AC impedance measurement of corpus callosum. Reported ~9:1 longitudinal:transverse conductivity **ratio**. Justifies our `aniso_maxratio` cap of 10:1 (the eigenvalue-RATIO cap; SimNIBS default 10). NB: `aniso_maxcond` is a separate eigenvalue-MAGNITUDE cap (S/m), not a ratio.
 
 **Ranck JB Jr, BeMent SL (1965).** The specific impedance of the dorsal columns of cat: an anisotropic medium.
 *Experimental Neurology* 11:451–463.
@@ -40,7 +40,7 @@ Organized by role in the project. All citations are used in scripts, docs, or ma
 
 **Windhoff M, Opitz A, Thielscher A (2013).** Electric field calculations in brain stimulation based on finite elements: an optimized processing pipeline for the generation of accurate individual head models.
 *Human Brain Mapping* 34(4):923–935.
-→ Main SimNIBS methodology paper. Eigenvalue clipping (max_cond) discussed as numerical stability + physiological plausibility measure. No explicit citation for max_cond=2 default; empirically calibrated for in vivo DTI distributions.
+→ Main SimNIBS methodology paper. Eigenvalue clipping discussed as numerical stability + physiological plausibility measure. Two caps: `aniso_maxratio` (ratio, default 10) and `aniso_maxcond` (magnitude, default 2 S/m); both empirically calibrated.
 
 **Thielscher A, Antunes A, Saturnino GB (2015).** Field modeling for transcranial magnetic stimulation: A useful tool to understand the physiological effects of TMS?
 *Engineering in Medicine and Biology Society (EMBC)*, 37th Annual Conference of the IEEE.
@@ -76,11 +76,13 @@ Organized by role in the project. All citations are used in scripts, docs, or ma
 
 ---
 
-## Free-Water Elimination (Context Only)
+## Free-Water Elimination
 
 **Pasternak O, Sochen N, Gur Y, Intrator N, Assaf Y (2009).** Free water elimination and mapping from diffusion MRI.
 *Magnetic Resonance in Medicine* 62(3):717–730.
-→ FWE removes the isotropic free-water compartment from DTI, yielding higher tissue-specific FA. Would partially close the DTI/MD-dMRI anisotropy gap but introduces additional complexity; not implemented in current pipeline.
+→ FWE removes the isotropic free-water compartment. **It defines the canonical MD-dMRI model** (`01e`/`02`),
+generalised to the QTI 3-compartment fit: ⟨D⟩_tissue = (Σ_{k≠FW} f_k D_k)/(Σ_{k≠FW} f_k), raising the median
+⟨D⟩ anisotropy from 1.92 to 2.13 in this subject. Plain ⟨D⟩ (no FWE) is the `--meanD` sensitivity.
 
 ---
 
@@ -88,7 +90,7 @@ Organized by role in the project. All citations are used in scripts, docs, or ma
 
 **Saturnino GB, Siebner HR, Thielscher A, Madsen KH (2019).** Accessibility of cortical regions to focal TES: Dependence on spatial position, safety, and practical constraints.
 *NeuroImage* 203:116183.
-→ 5mm spherical ROI approach around MNI coordinates — used by SimNIBS group for CORTICAL targets. Our 3mm radius follows the same sphere-sampling logic but adapted for small subcortical nuclei.
+→ 5mm spherical ROI approach around MNI coordinates — used by SimNIBS group for CORTICAL targets. We follow this only for the cortical M1 reference; the subcortical ROIs are anatomical atlas masks (below), not spheres.
 
 **Huang Y, Liu AA, Lafon B, Friedman D, Dayan M, Wang X, Bikson M, Doyle WK, Devinsky O, Parra LC (2017).** Measurements and models of electric fields in the in vivo human brain during transcranial electrical stimulation.
 *eLife* 6:e18834.
@@ -102,13 +104,13 @@ Organized by role in the project. All citations are used in scripts, docs, or ma
 
 ## ROI Definitions — Subcortical Atlases
 
-**Pauli WM, Nili AN, Tyszka JM (2018).** A high-resolution probabilistic in vivo atlas of human subcortical brain nuclei.
+**Pauli WM, Nili AN, Tyszka JM (2018).** A high-resolution probabilistic in vivo atlas of human subcortical brain nuclei (CIT168).
 *Scientific Data* 5:180063.
-→ 7T probabilistic atlas used for subcortical ROI definitions (PUT, Ca, NAC, GPi, GPe, RN). Olsson 2025 uses this atlas for their segmentations.
+→ **The atlas used for the midbrain ROI** (`06_build_atlas_rois.sh`): CIT168 SNc+SNr+VTA are merged into one SN/VTA mask, warped from MNI152-2009c to subject space. The basal-ganglia ROIs (caudate, putamen, pallidum) come from the HarvardOxford-Subcortical atlas instead. Olsson 2025 also uses CIT168.
 
 **Ewert S, Plettig P, Li N, Bhatt M, Bhatt DL, Kühn AA, Volkmann J, Horn A (2018).** Toward defining deep brain stimulation targets in MNI space: A subcortical atlas based on multimodal MRI, histology and structural connectivity.
 *NeuroImage* 170:271–282.
-→ DISTAL atlas. MNI coordinates for SNc, SNr, and VTA used in our ROI definitions (DISTAL provides highest-quality brainstem parcellations for the PD-relevant dopaminergic nuclei).
+→ DISTAL atlas — a high-quality brainstem alternative for the dopaminergic nuclei; evaluated but not used in the final pipeline (CIT168 covers the same nuclei and was already used by the source dataset).
 
 ---
 

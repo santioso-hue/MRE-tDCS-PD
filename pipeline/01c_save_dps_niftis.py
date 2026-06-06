@@ -25,11 +25,12 @@ dps.mat fields used:
   .MD        — Mean diffusivity, shape (96,96,48), float32, range [0.005, 4.976] μm²/ms
   .mask      — Brain mask, shape (96,96,48), uint8
   .signaniso — Tensor shape indicator, shape (96,96,48), float64, values {-1, 0, +1}
-  .ad        — Axial diffusivity of mean compartment tensor, shape (96,96,48), float32, μm²/ms
-               Largest eigenvalue of ⟨D⟩; ad > rd universally (even oblate voxels).
-               Used with rd and u to construct σ ∝ ⟨D⟩ (orientation-dispersion-invariant).
-  .rd        — Radial diffusivity of mean compartment tensor, shape (96,96,48), float32, μm²/ms
-               Smallest eigenvalue of ⟨D⟩.
+  .ad        — Axial diffusivity (largest eigenvalue) of the mean tensor ⟨D⟩, μm²/ms.
+  .rd        — Radial diffusivity ((λ2+λ3)/2) of ⟨D⟩, μm²/ms.
+               ad/rd are saved here for QA only. The conductivity model uses the FULL triaxial
+               ⟨D⟩ — reconstructed from dps.mat's mdxx..mdyz (the populated mean-tensor
+               components) in 01d, NOT a cylindrical ad/rd tensor (that interim model is
+               superseded; see the derivation-doc appendix).
 
 Outputs (saved in registration/):
   C_mu_dps_dMRI.nii.gz      — μFA in dMRI space (NaN replaced with 0)
@@ -66,7 +67,7 @@ MD        = dps['MD'][0, 0].astype(np.float32)        # shape (96, 96, 48), μm�
 mask      = dps['mask'][0, 0].astype(bool)            # shape (96, 96, 48)
 signaniso = dps['signaniso'][0, 0].astype(np.float32) # shape (96, 96, 48), {-1, 0, +1}
 ad        = dps['ad'][0, 0].astype(np.float32)        # shape (96, 96, 48), μm²/ms — largest eigenvalue of ⟨D⟩
-rd        = dps['rd'][0, 0].astype(np.float32)        # shape (96, 96, 48), μm²/ms — smallest eigenvalue of ⟨D⟩
+rd        = dps['rd'][0, 0].astype(np.float32)        # shape (96, 96, 48), μm²/ms — radial diffusivity (λ2+λ3)/2 of ⟨D⟩
 
 print(f"  ufa       (within mask): [{ufa[mask].min():.4f}, {ufa[mask].max():.4f}]")
 print(f"  MD        (within mask): [{MD[mask].min():.4f},  {MD[mask].max():.4f}] μm²/ms")
