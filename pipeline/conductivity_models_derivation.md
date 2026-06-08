@@ -102,11 +102,16 @@ and the one step where the MD-dMRI pipeline is less standardized than dwi2cond's
 
 ## ROI definition
 
-E-field and microstructure are read out over anatomical atlas masks, not coordinate spheres
-(neighbouring midbrain nuclei sit only a few mm apart and overlapped as spheres). Basal ganglia from
-HarvardOxford-Subcortical; midbrain SN/VTA from CIT168/Pauli 2017 (merged, inseparable at
-2.5/3 mm); the cortical M1 reference under the C3 anode stays a small sphere. See
-`analysis/06_build_atlas_rois.sh`.
+E-field and microstructure are read out over the FastSurfer-derived ROI masks in mesh space
+(`analysis/build_rois.py` -> `registration/fastsurfer_rois/`, loaded by the analysis scripts through
+`analysis/_rois.py`): cortical and white-matter lobes (DKT grouped to frontal/parietal/temporal/
+occipital), corpus callosum, and the aseg subcortical structures (thalamus, caudate, putamen,
+pallidum, accumbens, hippocampus, amygdala, brainstem), plus a whole-brain GM+WM mask. FastSurfer is
+run seg-only (deep-learning, license-free); its conformed segmentation is registered to the charm T1
+(FLIRT 6-DOF rigid) so the masks land in the FEM/E-field space. The fine midbrain nuclei
+(SNc/SNr/VTA/RN/STN), below aseg resolution, come from the CIT168/Pauli 2017 atlas warped via ANTs
+(`analysis/07_build_tier3_nuclei.sh`) and merge into the ROI set when needed. Each ROI is sampled over
+every GM/WM element it contains, not a fixed-radius sphere.
 
 ## Limitations
 

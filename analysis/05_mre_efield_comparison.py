@@ -24,30 +24,21 @@ import os
 import sys
 import csv
 import numpy as np
-import nibabel as nib
-import simnibs
 from simnibs import mesh_io
 from scipy.stats import spearmanr
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "pipeline"))
 from _config import cfg  # noqa: E402
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _rois import (  # noqa: E402
+    load_labeled, sample_volume_medians, sample_tensor_aniso_medians, assign_mesh_labels)
 
 WORK = cfg["WORK_DIR"]; M2M = cfg["M2M_DIR"]; REG = cfg["REG_DIR"]
 
-# ── ROIs (MNI152, mm): subcortical PD targets that overlap Olsson et al. ───────
-ROIS = {
-    "L_SNc": [-8, -16, -12], "R_SNc": [8, -16, -12], "L_SNr": [-10, -18, -11], "R_SNr": [10, -18, -11],
-    "L_VTA": [-4, -16, -9],  "R_VTA": [4, -16, -9],
-    "L_PUT": [-28, -2, 4],   "R_PUT": [28, -2, 4],   "L_Ca": [-13, 9, 9], "R_Ca": [13, 9, 9],
-    "L_GPe": [-24, -8, 2],   "R_GPe": [24, -8, 2],   "L_GPi": [-20, -10, -2], "R_GPi": [20, -10, -2],
-    "L_RN": [-4, -22, -6],   "R_RN": [4, -22, -6],
-}
-# Per-structure ROI radii (mm), matched to analysis/04 so the E-field values agree.
-# At the coarse MD-dMRI (2.5 mm) / MRE (3 mm) grids a 3 mm sphere is ~1 voxel — too few
-# for a stable cross-modal median — so deep nuclei use 7 mm, basal ganglia 5 mm.
-RADII = {r: (7.0 if any(s in r for s in ("SN", "VTA", "RN")) else 5.0) for r in (
-    "L_SNc R_SNc L_SNr R_SNr L_VTA R_VTA L_PUT R_PUT L_Ca R_Ca "
-    "L_GPe R_GPe L_GPi R_GPi L_RN R_RN").split()}
+# ROIs are the FastSurfer-derived masks in mesh space (registration/fastsurfer_rois/), shared with
+# 04 through _rois.py: cortical and WM lobes, corpus callosum, and aseg subcortical structures. Each
+# ROI is sampled over all of its voxels/elements, so the median reflects the whole structure.
+TENSOR = os.path.join(WORK, "tensor_MD_dMRI.nii.gz")
 
 VOLUME_MAPS = {  # name -> T1-space NIfTI (microstructure + mechanics)
     "stiffness": f"{REG}/mre_stiffness_T1.nii.gz",
@@ -56,7 +47,6 @@ VOLUME_MAPS = {  # name -> T1-space NIfTI (microstructure + mechanics)
     "mre_conf":  f"{REG}/mre_confidence_T1.nii.gz",  # reported for reference, not used to gate
     "MD":        f"{REG}/MD_T1.nii.gz",
     "uFA":       f"{REG}/C_mu_T1.nii.gz",
-    "fw_frac":   f"{REG}/fw_frac_T1.nii.gz",
 }
 MESHES = {  # E-field per model
     "E_ISO":     (f"{WORK}/sim_ISO/{cfg['SUBJECT']}_TDCS_1_scalar.msh"),
@@ -65,71 +55,50 @@ MESHES = {  # E-field per model
 }
 
 
-def roi_volume_median(d, inv, center_world, radius):
-    ijk = inv[:3, :3] @ center_world + inv[:3, 3]
-    i, j, k = np.round(ijk).astype(int)
-    r = int(np.ceil(radius))
-    sl = d[max(i-r, 0):i+r+1, max(j-r, 0):j+r+1, max(k-r, 0):k+r+1]
-    v = sl[np.isfinite(sl) & (sl != 0)]
-    return float(np.median(v)) if v.size else np.nan
-
-
-def conductivity_anisotropy(tensor_path, inv, center_world, radius):
-    t = nib.load(tensor_path).get_fdata()
-    ijk = inv[:3, :3] @ center_world + inv[:3, 3]
-    i, j, k = np.round(ijk).astype(int); r = int(np.ceil(radius))
-    blk = t[max(i-r, 0):i+r+1, max(j-r, 0):j+r+1, max(k-r, 0):k+r+1].reshape(-1, 6)
-    blk = blk[np.abs(blk[:, 0]) > 1e-6]
-    if blk.size == 0:
-        return np.nan
-    M = np.zeros((len(blk), 3, 3))
-    for a, (p, q) in enumerate([(0, 0), (0, 1), (0, 2), (1, 1), (1, 2), (2, 2)]):
-        M[:, p, q] = blk[:, a]; M[:, q, p] = blk[:, a]
-    ev = np.linalg.eigvalsh(M)
-    return float(np.median(ev[:, 2] / np.maximum(ev[:, 0], 1e-9)))
-
-
 def extract_subject():
-    """Return {roi: {quantity: value}} for the configured subject."""
-    centers = simnibs.mni2subject_coords(np.array(list(ROIS.values()), float), M2M)
-    centers = {k: centers[i] for i, k in enumerate(ROIS)}
+    """Return {roi: {quantity: value}} for the configured subject, sampling each
+    atlas ROI mask over all its voxels/elements (no spheres)."""
+    labeled, lab_aff, names = load_labeled(REG)
+    rows = {names[k]: {} for k in names}
 
-    # preload volume maps
-    vols = {}
-    for name, p in VOLUME_MAPS.items():
+    # scalar microstructure + mechanics maps: median within each ROI
+    for mname, p in VOLUME_MAPS.items():
         if os.path.exists(p):
-            img = nib.load(p); vols[name] = (img.get_fdata(), np.linalg.inv(img.affine))
-    t1_inv = np.linalg.inv(nib.load(f"{M2M}/T1.nii.gz").affine)
+            for roi, val in sample_volume_medians(p, labeled, lab_aff, names).items():
+                rows[roi][mname] = val
 
-    # preload meshes
-    meshes = {m: mesh_io.read_msh(p) for m, p in MESHES.items() if os.path.exists(p)}
-    bary = {m: meshes[m].elements_baricenters().value for m in meshes}
-    tag = {m: meshes[m].elm.tag1 for m in meshes}
-    Ef = {m: meshes[m].field['magnE'].value for m in meshes}
+    # conductivity-tensor anisotropy (lambda1/lambda3) within each ROI
+    if os.path.exists(TENSOR):
+        for roi, val in sample_tensor_aniso_medians(TENSOR, labeled, lab_aff, names).items():
+            rows[roi]["cond_aniso"] = val
 
-    rows = {}
-    for roi, c in centers.items():
-        rad = RADII.get(roi, 6.0)
-        row = {}
-        for name, (d, inv) in vols.items():
-            row[name] = roi_volume_median(d, inv, c, rad)
-        row["cond_aniso"] = conductivity_anisotropy(f"{WORK}/tensor_MD_dMRI.nii.gz", t1_inv, c, rad)
-        # viscosity phi = atan(G''/G')
-        if np.isfinite(row.get("loss", np.nan)) and row.get("storage", 0):
-            row["viscosity"] = float(np.degrees(np.arctan2(row["loss"], row["storage"])))
-        for m in meshes:
-            dist = np.linalg.norm(bary[m] - c, axis=1)
-            sel = ((tag[m] == 1) | (tag[m] == 2)) & (dist < rad)
-            row[m] = float(np.median(Ef[m][sel])) if sel.any() else np.nan
-        if np.isfinite(row.get("E_MDdMRI", np.nan)) and np.isfinite(row.get("E_DTI", np.nan)):
-            row["dE_model"] = 100 * (row["E_MDdMRI"] - row["E_DTI"]) / row["E_DTI"]  # model impact %
-        rows[roi] = row
+    # viscosity phi = atan(G''/G')
+    for r in rows.values():
+        if np.isfinite(r.get("loss", np.nan)) and r.get("storage", 0):
+            r["viscosity"] = float(np.degrees(np.arctan2(r["loss"], r["storage"])))
+
+    # E-field per model: median over GM+WM elements whose barycentre lands in the ROI
+    for m, path in MESHES.items():
+        if not os.path.exists(path):
+            continue
+        msh = mesh_io.read_msh(path)
+        elab = assign_mesh_labels(msh.elements_baricenters().value, labeled, lab_aff)
+        gmwm = (msh.elm.tag1 == 1) | (msh.elm.tag1 == 2)
+        ef = msh.field['magnE'].value
+        for k, n in names.items():
+            sel = (elab == k) & gmwm
+            rows[n][m] = float(np.median(ef[sel])) if sel.any() else np.nan
+
+    # model impact on the E-field (local quantity; the montage largely cancels)
+    for r in rows.values():
+        if np.isfinite(r.get("E_MDdMRI", np.nan)) and np.isfinite(r.get("E_DTI", np.nan)) and r.get("E_DTI", 0):
+            r["dE_model"] = 100 * (r["E_MDdMRI"] - r["E_DTI"]) / r["E_DTI"]
     return rows
 
 
 def main():
     rows = extract_subject()
-    keys = ["stiffness", "viscosity", "MD", "uFA", "fw_frac", "cond_aniso",
+    keys = ["stiffness", "viscosity", "MD", "uFA", "cond_aniso",
             "E_ISO", "E_DTI", "E_MDdMRI", "dE_model"]
     # write per-ROI table
     out_csv = os.path.join(os.path.dirname(__file__), "results", "mre_efield_per_roi.csv")
@@ -150,8 +119,7 @@ def main():
     print("Expected from Olsson et al.: MD vs stiffness NEGATIVE; uFA vs stiffness POSITIVE")
     print("="*70)
     for a, b, exp in [("MD", "stiffness", "neg"), ("uFA", "stiffness", "pos"),
-                      ("fw_frac", "stiffness", "neg"), ("MD", "viscosity", "?"),
-                      ("cond_aniso", "stiffness", "pos")]:
+                      ("MD", "viscosity", "?"), ("cond_aniso", "stiffness", "pos")]:
         x, y = col(a), col(b); m = np.isfinite(x) & np.isfinite(y)
         if m.sum() >= 4:
             rho, p = spearmanr(x[m], y[m])
@@ -161,7 +129,7 @@ def main():
     print("RELEVANCE: where does the conductivity model change the E-field most,")
     print("and does it track tissue alteration (stiffness / free water)?")
     print("="*70)
-    for a in ["stiffness", "fw_frac", "MD"]:
+    for a in ["stiffness", "MD"]:
         x, y = col("dE_model"), col(a); m = np.isfinite(x) & np.isfinite(y)
         if m.sum() >= 4:
             rho, p = spearmanr(x[m], y[m])

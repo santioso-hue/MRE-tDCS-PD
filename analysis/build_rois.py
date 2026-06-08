@@ -1,33 +1,32 @@
 """
 build_rois.py — FastSurfer-based ROI masks in charm/mesh space for the tDCS E-field analysis.
 
-The single, clean ROI builder. Takes a FastSurfer seg-only result (run locally, license-free) and
-emits the cortical-lobe, white-matter-lobe, corpus-callosum, and whole-brain masks in the charm
-mesh / E-field space. Subcortical nuclei (CIT168/Pauli) and brainstem (Iglesias) are NOT built here;
-they come from the atlas-warp path, independent of FastSurfer.
+Takes a FastSurfer seg-only result and emits ROI masks in the charm mesh (E-field) space:
+  Ctx lobes x4    roi_Ctx_{Frontal,Parietal,Temporal,Occipital}   (DKT grouped to lobes)
+  WM lobes x4     roi_WM_{Frontal,Parietal,Temporal,Occipital}    (cortical lobe propagated into WM)
+  Corpus callosum roi_CC                                           (FastSurferCC labels 251-255)
+  Subcortical     roi_{Thalamus,Caudate,Putamen,Pallidum,Accumbens,Hippocampus,Amygdala}_{L,R},
+                  roi_Brainstem                                    (FastSurfer aseg)
+  Whole brain     roi_Brain                                        (all GM+WM, excl. ventricles/CSF)
 
-Region set (mirrors Olsson et al. 2025, grouped to lobes):
-  Ctx lobes x4   -> roi_Ctx_{Frontal,Parietal,Temporal,Occipital}.nii.gz   (DKT grouped to lobes)
-  WM lobes x4    -> roi_WM_{Frontal,Parietal,Temporal,Occipital}.nii.gz    (cortical lobe propagated
-                     into cerebral WM by nearest-label = a volume approximation of FreeSurfer wmparc)
-  Corpus callosum-> roi_CC.nii.gz        (FastSurferCC labels 251-255, present in seg-only)
-  Whole brain    -> roi_Brain.nii.gz     (all GM+WM, excl. ventricles/CSF)
+It also writes a single labeled volume `roi_labels_meshspace.nii.gz` and `rois.json` ({label: name}),
+the interface the analysis scripts (extract_roi_efield.py, mre_efield_comparison.py) consume.
 
-Method: FastSurfer outputs live in FastSurfer-conformed space, which is NOT the charm/mesh space
-where the E-field lives. We register FastSurfer orig.mgz -> charm T1 (FSL FLIRT, 6-DOF rigid, same
-subject), build a single integer ROI-label volume in FastSurfer space, warp it once to mesh space
-with nearest-neighbour interpolation, then split into binary masks. No surface pipeline, no license.
+The fine midbrain nuclei (SNc/SNr/VTA/RN/STN) are NOT built here: they are below FastSurfer aseg's
+resolution and come from the CIT168/Pauli atlas (analysis/07_build_tier3_nuclei.sh), to be merged into
+the labeled volume when needed.
 
-Lobe grouping uses the standard Desikan-Killiany-Tourville index->lobe map (documented below).
-Cingulate is folded (anterior->Frontal, posterior/isthmus->Parietal); insula is excluded from the
-four lobes (it still counts toward whole-brain). If exact parity with Olsson's lobe definition is
-required, adjust LOBE_IDX.
+Method: register FastSurfer orig.mgz -> charm T1 (FSL FLIRT 6-DOF rigid, same subject), assemble one
+integer ROI-label volume in FastSurfer space, warp it once to mesh space (nearest-neighbour), split.
+Lobe grouping uses the standard Desikan-Killiany-Tourville index->lobe map (cingulate folded
+ant->Frontal / post->Parietal; insula excluded from the four lobes). Adjust LOBE_IDX for exact parity
+with a specific atlas. No surface pipeline, no FreeSurfer license.
 
-Usage:
-  <simnibs_python> analysis/build_rois.py --fs_dir /path/to/fastsurfer_out/<subject>
+Usage:  <simnibs_python> analysis/build_rois.py --fs_dir /path/to/fastsurfer_out/<subject>
 """
 import os
 import sys
+import json
 import argparse
 import subprocess
 import tempfile
@@ -39,7 +38,7 @@ import numpy as np            # noqa: E402
 import nibabel as nib         # noqa: E402
 from scipy import ndimage     # noqa: E402
 
-# DKT cortical region index -> lobe. Cortical label = 1000+idx (lh) / 2000+idx (rh).
+# DKT cortical region index -> lobe (cortical label = 1000+idx lh / 2000+idx rh).
 LOBE_IDX = {
     "Frontal":   [3, 12, 14, 17, 18, 19, 20, 24, 27, 28, 32, 2, 26],
     "Parietal":  [8, 10, 22, 23, 25, 29, 31],
@@ -51,8 +50,26 @@ LOBE_ID = {n: i + 1 for i, n in enumerate(LOBES)}   # cortex lobe ids 1..4
 WM_OFFSET = 10                                       # WM lobe ids 11..14
 CC_ID, BRAIN_ID = 21, 31
 CC_LABELS = [251, 252, 253, 254, 255]
-# ventricles / CSF / background to exclude from whole-brain (FreeSurfer aseg numbering)
-VENT_CSF = [0, 4, 5, 14, 15, 24, 43, 44, 31, 63, 72]
+VENT_CSF = [0, 4, 5, 14, 15, 24, 43, 44, 31, 63, 72]  # excluded from whole-brain
+
+# Subcortical structures straight from the FastSurfer aseg: aseg label -> (ROI id, name).
+ASEG = {
+    10: (41, "Thalamus_L"),    49: (42, "Thalamus_R"),
+    11: (43, "Caudate_L"),     50: (44, "Caudate_R"),
+    12: (45, "Putamen_L"),     51: (46, "Putamen_R"),
+    13: (47, "Pallidum_L"),    52: (48, "Pallidum_R"),
+    26: (49, "Accumbens_L"),   58: (50, "Accumbens_R"),
+    17: (51, "Hippocampus_L"), 53: (52, "Hippocampus_R"),
+    18: (53, "Amygdala_L"),    54: (54, "Amygdala_R"),
+    16: (55, "Brainstem"),
+}
+
+# label -> name for everything in the labeled volume except the BRAIN leftover (whole-brain is taken
+# from the tissue tags downstream, since it overlaps every other ROI).
+NAMES = {LOBE_ID[n]: f"Ctx_{n}" for n in LOBES}
+NAMES.update({LOBE_ID[n] + WM_OFFSET: f"WM_{n}" for n in LOBES})
+NAMES[CC_ID] = "CC"
+NAMES.update({rid: nm for (rid, nm) in ASEG.values()})
 
 
 def ctx_labels(idxs):
@@ -93,10 +110,12 @@ def main():
     if lobe_vol.any():
         idx = ndimage.distance_transform_edt(lobe_vol == 0, return_distances=False, return_indices=True)
         nearest = lobe_vol[tuple(idx)]
-        roi[wm] = nearest[wm] + WM_OFFSET            # 11..14
+        roi[wm] = nearest[wm] + WM_OFFSET
 
-    roi[np.isin(seg, CC_LABELS)] = CC_ID             # corpus callosum
-    brain = (seg > 0) & ~np.isin(seg, VENT_CSF)      # whole brain GM+WM (excl ventricles/CSF)
+    roi[np.isin(seg, CC_LABELS)] = CC_ID                          # corpus callosum
+    for aseg_lbl, (rid, _nm) in ASEG.items():                    # subcortical nuclei + brainstem
+        roi[seg == aseg_lbl] = rid
+    brain = (seg > 0) & ~np.isin(seg, VENT_CSF)                  # whole brain GM+WM (excl ventricles/CSF)
     roi[(roi == 0) & brain] = BRAIN_ID
 
     # --- register FastSurfer -> charm, warp the ROI-label volume to mesh space (one NN warp) ---
@@ -116,7 +135,7 @@ def main():
         subprocess.run([flirt, "-in", roi_nii, "-ref", charm_t1, "-applyxfm", "-init", mat,
                         "-interp", "nearestneighbour", "-out", roi_charm], check=True, env=env)
 
-    # --- split into binary masks in mesh space + QC ---
+    # --- split into binary masks in mesh space + write rois.json + QC ---
     lab = np.asarray(nib.load(roi_charm).dataobj).astype(np.int16)
     aff = nib.load(charm_t1).affine
     hdr = nib.load(charm_t1).header
@@ -126,24 +145,21 @@ def main():
         return int(mask.sum())
 
     print(f"\n{'ROI (mesh space)':22s}{'voxels':>10s}")
-    for name in LOBES:
-        print(f"{'Ctx_' + name:22s}{save(lab == LOBE_ID[name], f'roi_Ctx_{name}.nii.gz'):10d}")
-    for name in LOBES:
-        print(f"{'WM_' + name:22s}{save(lab == LOBE_ID[name] + WM_OFFSET, f'roi_WM_{name}.nii.gz'):10d}")
-    print(f"{'CC':22s}{save(lab == CC_ID, 'roi_CC.nii.gz'):10d}")
+    for rid, nm in sorted(NAMES.items()):
+        print(f"{nm:22s}{save(lab == rid, f'roi_{nm}.nii.gz'):10d}")
     print(f"{'Brain (all GM+WM)':22s}{save(lab > 0, 'roi_Brain.nii.gz'):10d}")
+    with open(os.path.join(outdir, "rois.json"), "w") as f:
+        json.dump({str(k): v for k, v in NAMES.items()}, f, indent=2)
 
     # registration QC: overlap of warped brain with charm GM+WM tissues
     ft = os.path.join(cfg["M2M_DIR"], "final_tissues.nii.gz")
     if os.path.exists(ft):
         seg_ch = nib.load(ft).get_fdata()
         seg_ch = seg_ch[..., 0] if seg_ch.ndim == 4 else seg_ch
-        charm_gmwm = np.isin(seg_ch, [1, 2])
-        warped_brain = lab > 0
-        inter = (warped_brain & charm_gmwm).sum()
-        dice = 2 * inter / (warped_brain.sum() + charm_gmwm.sum())
+        warped, charm_gmwm = lab > 0, np.isin(seg_ch, [1, 2])
+        dice = 2 * (warped & charm_gmwm).sum() / (warped.sum() + charm_gmwm.sum())
         print(f"\nReg QC: Dice(FastSurfer brain, charm GM+WM) = {dice:.3f}  (expect > ~0.85)")
-    print(f"\nMasks -> {outdir}")
+    print(f"\nMasks + roi_labels_meshspace.nii.gz + rois.json -> {outdir}")
 
 
 if __name__ == "__main__":

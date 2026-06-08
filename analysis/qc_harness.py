@@ -226,11 +226,8 @@ def qc_register(P):
 def qc_conductivity(P):
     m, f = {}, []
     seg = _data(P["samseg"])
-    # Canonical MD-dMRI tensor is free-water-eliminated (tensor_MD_dMRI.nii.gz). The plain-⟨D⟩
-    # sensitivity (tensor_MD_dMRI_meanD.nii.gz) is optional — checked only if built, never flagged absent.
+    # The MD-dMRI conductivity input is the plain QTI mean tensor <D> (tensor_MD_dMRI.nii.gz).
     tensors = [("MDdMRI", "tensor_MD_dMRI.nii.gz")]
-    if os.path.exists(os.path.join(P["work"], "tensor_MD_dMRI_meanD.nii.gz")):
-        tensors.append(("meanD", "tensor_MD_dMRI_meanD.nii.gz"))
     for tag, fname in tensors:
         path = os.path.join(P["work"], fname)
         if not os.path.exists(path):
@@ -312,17 +309,12 @@ def qc_sims(P):
 
 def qc_rois(P):
     m, f = {}, []
-    roi_dirs = ["samseg_rois", "atlas_rois/tier3", "tier1_rois"]
     n_empty = 0; n_total = 0
-    for d in roi_dirs:
-        for p in glob.glob(os.path.join(P["reg"], d, "roi_*.nii.gz")):
-            n_total += 1
-            if (_data(p) > 0).sum() == 0:
-                n_empty += 1; f.append(f"rois:empty({os.path.basename(p)})")
-    # quarantined cortical ROIs (rh-corrupt, cluster-pending) — reported explicitly so a reader of the
-    # cohort table sees cortical is DEFERRED, not silently missing. Not a flag (it's expected on laptop).
-    pend = glob.glob(os.path.join(P["reg"], "tier1_rois", "_pending_cluster", "roi_*.nii.gz"))
-    m["roi_n_total"] = n_total; m["roi_n_empty"] = n_empty; m["roi_pending"] = len(pend)
+    for p in glob.glob(os.path.join(P["reg"], "fastsurfer_rois", "roi_*.nii.gz")):
+        n_total += 1
+        if (_data(p) > 0).sum() == 0:
+            n_empty += 1; f.append(f"rois:empty({os.path.basename(p)})")
+    m["roi_n_total"] = n_total; m["roi_n_empty"] = n_empty
     if n_total == 0:
         f.append("rois:none_built")
     return m, f
@@ -338,7 +330,7 @@ def resolve_subjects(args):
     return [{"id": cfg["SUBJECT"], "work": cfg["WORK_DIR"], "m2m": cfg["M2M_DIR"],
              "reg": cfg["REG_DIR"],
              "samseg": os.path.join(cfg["M2M_DIR"], "segmentation", "labeling.nii.gz"),
-             "cc_mask": os.path.join(cfg["REG_DIR"], "tier1_rois", "roi_CorpusCallosum.nii.gz")}]
+             "cc_mask": os.path.join(cfg["REG_DIR"], "fastsurfer_rois", "roi_CC.nii.gz")}]
 
 
 # [PROV] / directional metrics -> which tail to guard once a cohort exists ("low" = flag below the
@@ -387,7 +379,7 @@ def main():
     for P in subjects:
         P.setdefault("reg", os.path.join(P["work"], "registration"))
         P.setdefault("samseg", os.path.join(P["m2m"], "segmentation", "labeling.nii.gz"))
-        P.setdefault("cc_mask", os.path.join(P["reg"], "tier1_rois", "roi_CorpusCallosum.nii.gz"))
+        P.setdefault("cc_mask", os.path.join(P["reg"], "fastsurfer_rois", "roi_CC.nii.gz"))
         row = {"subject": P["id"]}; flags_by_stage = {}
         for stage_name, fn in STAGES:
             try:
@@ -451,7 +443,7 @@ def _overlay_png(P, png_dir):
     t1 = _data(os.path.join(P["m2m"], "T1.nii.gz"))
     if t1 is None:
         return
-    lab = _data(os.path.join(P["reg"], "tier1_rois", "tier1_volume_labeled.nii.gz"))  # active 6-ROI set
+    lab = _data(os.path.join(P["reg"], "fastsurfer_rois", "roi_labels_meshspace.nii.gz"))  # FastSurfer ROI labels
     # center the three slices on the ROI-label centroid so small ROIs (CC, mesencephalon) are in-plane
     if lab is not None and (lab > 0).any():
         ci, cj, ck = (int(round(c)) for c in np.array(np.where(lab > 0)).mean(axis=1))

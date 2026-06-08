@@ -55,6 +55,7 @@ bash           pipeline/02_register_dmri_to_T1.sh                          # QTI
 simnibs_python pipeline/03_build_conductivity_tensor.py                    # MD-dMRI tensor (sigma ~ <D>)
 simnibs_python pipeline/04_run_simulations.py                             # ISO + DTI + MD-dMRI FEM
 simnibs_python analysis/build_rois.py --fs_dir <fastsurfer_out>/$SUBJECT   # ROI masks in mesh space
+simnibs_python analysis/04_extract_roi_efield.py                          # per-ROI E-field table
 ```
 
 Quality control and the post-hoc MRE comparison:
