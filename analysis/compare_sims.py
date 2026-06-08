@@ -45,7 +45,7 @@ def stats(v):
                 p99=float(np.percentile(v, 99)), max=float(v.max()))
 
 
-# ── per-model: stats, validation, and magnE interpolated to the T1 grid ───────────────────────
+# per-model: stats, validation, and magnE interpolated to the T1 grid
 rows, vols = {}, {}
 for name, d, kind in MODELS:
     msh = load_mesh(d, kind)
@@ -65,7 +65,7 @@ for name, d, kind in MODELS:
              os.path.join(OUT, f"magnE_{name.replace('-', '_')}_T1.nii.gz"))
     print(f"  {name}: interpolated -> magnE_{name.replace('-', '_')}_T1.nii.gz")
 
-# ── comparison + validation table ─────────────────────────────────────────────────────────────
+# comparison + validation table
 print("\n=== Per-model |E| (V/m), tissue-level (no ROIs) ===")
 print(f"{'model':9s}{'GM mean':>9s}{'GM med':>8s}{'GM p95':>8s}{'GM max':>8s}{'WM p95':>8s}{'spike':>7s}   valid")
 for name, _, _ in MODELS:
@@ -76,7 +76,7 @@ for name, _, _ in MODELS:
           f"{r['gm']['max']:8.3f}{r['wm']['p95']:8.3f}{r['spike']:7.1f}   {'PASS' if r['ok'] else 'FLAG'}")
 print(f"  (validation: GM p95 in {EFIELD_P95} V/m, spike max/p95 <= {SPIKE_MAX})")
 
-# ── model-vs-model deltas (the conductivity-model effect, brain GM+WM) ─────────────────────────
+# model-vs-model deltas (the conductivity-model effect, brain GM+WM)
 print("\n=== Global E-field deltas within cerebral GM+WM ===")
 for a, b in [("MD-dMRI", "DTI"), ("MD-dMRI", "ISO"), ("DTI", "ISO")]:
     if a not in vols or b not in vols:
@@ -91,7 +91,7 @@ for a, b in [("MD-dMRI", "DTI"), ("MD-dMRI", "ISO"), ("DTI", "ISO")]:
         nib.save(nib.Nifti1Image(diff.astype(np.float32), aff, t1img.header),
                  os.path.join(OUT, "diff_MDdMRI_minus_DTI_T1.nii.gz"))
 
-# ── visualization PNGs ────────────────────────────────────────────────────────────────────────
+# visualization PNGs
 try:
     import matplotlib
     matplotlib.use("Agg")

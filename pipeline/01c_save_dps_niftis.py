@@ -57,7 +57,7 @@ RDIR = cfg["REG_DIR"]
 
 os.makedirs(RDIR, exist_ok=True)
 
-# ── Load dps.mat ───────────────────────────────────────────────────────────────
+# Load dps.mat
 print("Loading dps.mat...")
 mat = scipy.io.loadmat(os.path.join(FDIR, "dps.mat"))
 dps = mat['dps']  # MATLAB struct stored as (1,1) object array
@@ -82,7 +82,7 @@ sph     = (np.abs(signaniso) < 0.5) & mask
 print(f"  signaniso (brain): {prolate.sum()} prolate (+1), {oblate.sum()} oblate (-1), "
       f"{sph.sum()} spherical (0)")
 
-# ── Replace NaN/inf with 0 outside mask ───────────────────────────────────────
+# Replace NaN/inf with 0 outside mask
 # dps.mat fields have valid values inside mask; NaN or garbage outside.
 # Set to 0 so FLIRT trilinear/nearestneighbour interpolation cannot propagate NaN.
 ufa[~mask]       = 0.0
@@ -97,13 +97,13 @@ ufa = np.clip(ufa, 0.0, 1.0)
 ad = np.maximum(ad, 0.0)
 rd = np.clip(rd, 0.0, ad)   # rd cannot exceed ad
 
-# ── Borrow affine from dtd_covariance_C_mu.nii.gz (same dMRI space) ───────────
+# Borrow affine from dtd_covariance_C_mu.nii.gz (same dMRI space)
 ref_img = nib.load(os.path.join(FDIR, "dtd_covariance_C_mu.nii.gz"))
 affine  = ref_img.affine
 assert ref_img.shape == ufa.shape, \
     f"Shape mismatch: C_mu {ref_img.shape} vs ufa {ufa.shape}"
 
-# ── Save ────────────────────────────────────────────────────────────────────────
+# Save
 def save_nifti(data, path, ref_img):
     hdr = ref_img.header.copy()
     hdr.set_data_shape(data.shape)

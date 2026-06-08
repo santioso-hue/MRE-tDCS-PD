@@ -46,8 +46,7 @@ Scripts run in order; each reads its paths from the config.
 bash    pipeline/00_charm.sh "$SUBJECT" T1.nii T2.nii "$WORK_DIR"   # FEM head model
 bash    pipeline/00_dwi2cond.sh                                      # DTI tensor (dwi2cond)
 bash    pipeline/01_register_dMRI_to_T1.sh                           # QTI maps/tensors -> T1
-simnibs_python pipeline/02_build_conductivity_tensor.py              # sigma ~ <D> (MD-dMRI)
-simnibs_python pipeline/02c_build_multicompartment_conductivity.py   # free-water-eliminated
+simnibs_python pipeline/02_build_conductivity_tensor.py              # MD-dMRI tensor: free-water-eliminated <D>
 simnibs_python pipeline/03_run_simulations.py                        # ISO + DTI + MD-dMRI FEM
 simnibs_python analysis/04_extract_roi_efield.py                     # ROI E-field comparison
 ```

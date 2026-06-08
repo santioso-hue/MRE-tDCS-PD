@@ -22,7 +22,7 @@ import nibabel as nib
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "pipeline"))
 from _config import cfg  # noqa: E402
 
-# ── thresholds ─────────────────────────────────────────────────────────────────────────────────
+# thresholds
 # Absolute thresholds are STARTING POINTS calibrated on the pilot (n=1). Items marked [PROV] are
 # provisional single-subject cutoffs — with one subject we cannot know the cohort spread, so these
 # should be recalibrated as a cohort PERCENTILE (e.g. flag below the 5th percentile) once 5-8
@@ -103,7 +103,7 @@ def _vn_check(e, sigma0):
     return degfrac, vn_err, float(np.percentile(sig, 99)), float(np.percentile(sig, 1))
 
 
-# ── stage checks: each returns (metrics dict, list of flag strings) ────────────────────────────
+# stage checks: each returns (metrics dict, list of flag strings)
 def qc_charm(P):
     m, f = {}, []
     m2m = P["m2m"]
@@ -264,7 +264,7 @@ def qc_conductivity(P):
                 m[f"cond_{tag}_{tis}_md"] = round(md_med, 3)
                 if not (0.2 <= md_med <= 3.0):   # plausible mean diffusivity band (um^2/ms)
                     f.append(f"cond:{tag}_{tis}_md_implausible")
-                # ── semi-direct VN check ──────────────────────────────────────────────────────
+                # semi-direct VN check
                 # SimNIBS's vn step scales this D per voxel to sigma = D * sigma0 / geomean(eig D),
                 # which forces geomean(eig sigma) == sigma0. We cannot read SimNIBS's internal sigma,
                 # but we CAN verify the input D supports the normalization: reconstruct sigma here and
@@ -400,7 +400,7 @@ def main():
         row["overall"] = "PASS" if all(row[f"{s}_PASS"] == "PASS" for s, _ in STAGES) else "FLAG"
         rows.append(row); stage_flags.append(flags_by_stage)
 
-    # ── cohort MAD outlier flagging (numeric metrics) ──
+    # cohort MAD outlier flagging (numeric metrics)
     # INERT on single subjects: gated at n>=4 (MAD is meaningless below that), so a lone subject is
     # judged ONLY by the absolute THR above. The `numeric` list is still built (safe, no-op) for the CSV.
     numeric = sorted({k for r in rows for k, v in r.items() if isinstance(v, (int, float))})
@@ -414,7 +414,7 @@ def main():
                         stage_flags[i].setdefault("MAD", []).append(f"{k}_outlier")
                         r["overall"] = "FLAG"
 
-    # ── write CSV ──
+    # write CSV
     cols = ["subject"] + numeric + [f"{s}_PASS" for s, _ in STAGES] + ["overall"]
     csv_path = os.path.join(args.out, "qc_summary.csv")
     with open(csv_path, "w", newline="") as fh:
@@ -422,7 +422,7 @@ def main():
         for r in rows:
             w.writerow(r)
 
-    # ── PNGs: flagged subjects + random 10% sample ──
+    # PNGs: flagged subjects + random 10% sample
     rng = np.random.default_rng(0)
     flagged = [i for i, r in enumerate(rows) if r["overall"] == "FLAG"]
     sample = set(flagged) | set(rng.choice(len(rows), max(1, len(rows) // 10), replace=False).tolist())
@@ -433,7 +433,7 @@ def main():
         except Exception as e:
             print(f"  PNG failed for {subjects[i]['id']}: {type(e).__name__}")
 
-    # ── console summary ──
+    # console summary
     print(f"\n{'='*60}\nQC SUMMARY  ({len(rows)} subject(s)) -> {csv_path}")
     for i, r in enumerate(rows):
         if r["overall"] == "FLAG":

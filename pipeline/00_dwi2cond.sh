@@ -43,7 +43,7 @@ BVEC="$DWI_BVEC"
 M2M="$M2M_DIR"
 TENSOR="$M2M/DTI_coregT1_tensor.nii.gz"
 
-# ── Pre-flight ────────────────────────────────────────────────────────────────
+# Pre-flight
 if [ ! -d "$M2M" ]; then
     echo "ERROR: $M2M not found — run CHARM (00_charm.sh) first."; exit 1
 fi
@@ -51,7 +51,7 @@ for f in "$DWI" "$BVAL" "$BVEC"; do
     [ -f "$f" ] || { echo "ERROR: required file not found: $f"; exit 1; }
 done
 
-# ── Idempotency ───────────────────────────────────────────────────────────────
+# Idempotency
 if [ -f "$TENSOR" ]; then
     echo "DTI tensor already exists: $TENSOR"
     echo "Skipping (delete it to force a re-run)."
@@ -63,7 +63,7 @@ cd "$WORK_DIR"
 # Remove any locked/partial prep from an interrupted run (avoids permission errors)
 rm -rf "$M2M/dMRI_prep"
 
-# ── Standard SimNIBS DTI preparation ──────────────────────────────────────────
+# Standard SimNIBS DTI preparation
 # Argument order: subID DWI bval bvec  (verified correct against dwi2cond source)
 echo "Running dwi2cond --all (eddy + dtifit + fnirt FA→T1 + vecreg + mask)..."
 dwi2cond --all "$SUBJECT" "$DWI" "$BVAL" "$BVEC"

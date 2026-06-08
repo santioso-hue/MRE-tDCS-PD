@@ -63,7 +63,7 @@ MD = np.real(dps['MD'][0, 0]).astype(np.float64)          # already µm²/ms
 ad = np.real(dps['ad'][0, 0]).astype(np.float64)
 rd = np.real(dps['rd'][0, 0]).astype(np.float64)
 
-# ── Validate the reconstruction before writing ───────────────────────────────
+# Validate the reconstruction before writing
 print("\nValidating ⟨D⟩ reconstruction (brain voxels)...")
 D = np.zeros(mask.shape + (3, 3))
 D[..., 0, 0] = mdxx; D[..., 1, 1] = mdyy; D[..., 2, 2] = mdzz
@@ -86,7 +86,7 @@ print(f"  eigenvalues µm²/ms: λ1={np.median(l1):.3f}  λ2={np.median(l2):.3f}
 assert np.max(np.abs(trace_md[mask] - MD[mask])) < 1e-2, "trace/3 != MD — unit-scale or diagonal-component bug"
 assert np.mean(l3 > 0) > 0.99, "reconstructed ⟨D⟩ not positive-definite in >1% of brain — assembly bug"
 
-# ── Eigenvalue maps (scalars) — registered with trilinear to PRESERVE magnitude ─
+# Eigenvalue maps (scalars) — registered with trilinear to PRESERVE magnitude
 # Whole-tensor vecreg interpolation averages neighbouring tensors and dilutes the
 # anisotropy ratio (1.92→1.28 observed). Registering eigenvalues as scalars (as the
 # ad/rd model does) preserves the eigenvalue magnitudes; vecreg of the full tensor is
@@ -98,14 +98,14 @@ lam1[mask] = lam_brain[:, 2]                       # largest
 lam2[mask] = lam_brain[:, 1]                       # middle
 lam3[mask] = lam_brain[:, 0]                       # smallest
 
-# ── Zero outside mask so registration interpolation cannot pull in garbage ────
+# Zero outside mask so registration interpolation cannot pull in garbage
 for a in (mdxx, mdyy, mdzz, mdxy, mdxz, mdyz):
     a[~mask] = 0.0
 
-# ── Assemble FSL dtifit order [Dxx, Dxy, Dxz, Dyy, Dyz, Dzz] (for vecreg frame) ─
+# Assemble FSL dtifit order [Dxx, Dxy, Dxz, Dyy, Dyz, Dzz] (for vecreg frame)
 tensor = np.stack([mdxx, mdxy, mdxz, mdyy, mdyz, mdzz], axis=-1).astype(np.float32)
 
-# ── Affine from C_mu (same dMRI space as dps.mat, matches v1_dMRI) ────────────
+# Affine from C_mu (same dMRI space as dps.mat, matches v1_dMRI)
 ref = nib.load(os.path.join(FDIR, "dtd_covariance_C_mu.nii.gz"))
 assert ref.shape == mask.shape, f"shape mismatch {ref.shape} vs {mask.shape}"
 

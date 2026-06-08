@@ -104,7 +104,7 @@ def main():
           f"most-isotropic voxel: λ=({l1[i_iso]:.2f},{l2[i_iso]:.2f},{l3[i_iso]:.2f}), "
           f"(λ1-λ3)/MD={iso_sp:.3f}")
 
-    # ── authoritative single numbers (defined mask + metric) ──────────────────
+    # authoritative single numbers (defined mask + metric)
     aniso = l1 / np.maximum(l3, 1e-6)
     print("\n  AUTHORITATIVE NUMBERS (QTI brain mask, median):")
     print(f"    base anisotropy  median λ1/λ3 of ⟨D⟩ = {np.median(aniso):.2f}  "
@@ -121,7 +121,7 @@ def main():
     print(f"    free-water bin = bin-{fw_bin}, median MD = {fw_md_per_bin[fw_bin]:.2f} µm²/ms "
           f"(literature free water ≈ 3.0 at 37 °C)")
 
-    # ── PART B: registration QA (optional) ────────────────────────────────────
+    # PART B: registration QA (optional)
     print("\nPART B — registration QA (dps.u vs dwi2cond DTI V1 in core WM)")
     v1_t1_p = os.path.join(cfg["REG_DIR"], "v1_T1.nii.gz")
     dti_p   = os.path.join(cfg["M2M_DIR"], "DTI_coregT1_tensor.nii.gz")

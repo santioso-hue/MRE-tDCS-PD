@@ -35,7 +35,7 @@ import os
 FDIR  = cfg["FIT_DIR"]
 RDIR  = cfg["REG_DIR"]
 
-# ── Load eigenvectors from dps.mat (nested MATLAB struct) ─────────────────────
+# Load eigenvectors from dps.mat (nested MATLAB struct)
 print("Loading dps.mat...")
 mat = scipy.io.loadmat(os.path.join(FDIR, "dps.mat"))
 dps = mat['dps']          # MATLAB struct stored as (1,1) object array
@@ -48,7 +48,7 @@ print(f"  imaginary RMS: {np.sqrt(np.mean(np.imag(u_raw)**2)):.5f}  (should be ~
 
 u = np.real(u_raw)  # (96, 96, 48, 3) — drop negligible imaginary part
 
-# ── Borrow affine from C_mu (same acquisition space as dps.mat) ─────────────
+# Borrow affine from C_mu (same acquisition space as dps.mat)
 ref_img = nib.load(os.path.join(FDIR, "dtd_covariance_C_mu.nii.gz"))
 affine  = ref_img.affine
 header  = ref_img.header.copy()
@@ -57,7 +57,7 @@ print(f"\nReference affine (from C_mu):\n{affine}")
 assert ref_img.shape == u.shape[:3], \
     f"Shape mismatch: C_mu {ref_img.shape} vs u {u.shape[:3]}"
 
-# ── Zero out outside-mask voxels, then normalise to unit vectors ─────────────
+# Zero out outside-mask voxels, then normalise to unit vectors
 u[~mask] = 0.0
 
 norms = np.linalg.norm(u, axis=-1, keepdims=True)   # (96, 96, 48, 1)
@@ -68,7 +68,7 @@ print(f"  mean={norms_brain.mean():.4f}, min={norms_brain.min():.4f}, max={norms
 safe_norms = np.where(norms > 0.1, norms, 1.0)
 v1_unit = u / safe_norms   # unit vectors inside mask; zeros outside
 
-# ── Save as 4D NIfTI [X, Y, Z, 3] — vecreg expects [Vx, Vy, Vz] as 3 volumes ──
+# Save as 4D NIfTI [X, Y, Z, 3] — vecreg expects [Vx, Vy, Vz] as 3 volumes
 header.set_data_shape(v1_unit.shape)
 header.set_data_dtype(np.float32)
 out_path = os.path.join(RDIR, "v1_dMRI.nii.gz")

@@ -85,7 +85,7 @@ l3 = np.maximum(lam3[covered][finite], EPS)
 ls = np.sort(np.stack([l1, l2, l3], 1), axis=1)  # enforce ordering after independent scalar interp
 l3, l2, l1 = ls[:, 0], ls[:, 1], ls[:, 2]
 
-# ── Anchor principal axis to the validated v1_T1 ─────────────────────────────
+# Anchor principal axis to the validated v1_T1
 # The tensor-vecreg principal axis disagrees with the vector-vecreg v1_T1 by ~8° median (two
 # independent interpolations of dps.u). v1_T1 is the reference (agrees with dwi2cond DTI V1 to ~22°
 # median in core WM); use it as v1, keep the in-plane shape from the tensor frame, set λ1→v1_T1.
@@ -121,7 +121,7 @@ out[idx[:, 0], idx[:, 1], idx[:, 2], 3] = Dt[:, 1, 1]
 out[idx[:, 0], idx[:, 1], idx[:, 2], 4] = Dt[:, 1, 2]
 out[idx[:, 0], idx[:, 1], idx[:, 2], 5] = Dt[:, 2, 2]
 
-# ── QA + abort on a broken tensor ────────────────────────────────────────────
+# QA + abort on a broken tensor
 ratio = l1 / np.maximum(l3, 1e-6)
 print(f"\nAnisotropy λ1/λ3 (covered brain): median={np.median(ratio):.3f}, p95={np.percentile(ratio,95):.3f}")
 print(f"  > 8 (VN cap): {100*np.mean(ratio>8):.2f}%")

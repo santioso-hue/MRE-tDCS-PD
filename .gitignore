@@ -1,19 +1,19 @@
-# ── Nested git repos (already versioned separately) ──────────────────────────
+# Nested git repos (already versioned separately)
 tDCS-head-model/
 
-# ── Large subject data directories ────────────────────────────────────────────
+# Large subject data directories
 # These contain NIfTIs, meshes, and logs — too large for git, use DVC or paths doc
 FullPD5_segmentation/
 sub04_segmentation/
 charm_ernie/
 
-# ── Papers / literature ───────────────────────────────────────────────────────
+# Papers / literature
 papers/
 
-# ── Claude working files ──────────────────────────────────────────────────────
+# Claude working files
 CLAUDE.md
 
-# ── Large binary/data file types ──────────────────────────────────────────────
+# Large binary/data file types
 *.nii
 *.nii.gz
 *.msh
@@ -23,26 +23,26 @@ CLAUDE.md
 *.h5
 *.hdf5
 
-# ── SimNIBS outputs ────────────────────────────────────────────────────────────
+# SimNIBS outputs
 *.geo
 *.pos
 
-# ── QC harness outputs (regenerable: re-run analysis/qc_harness.py) ─────────────
+# QC harness outputs (regenerable: re-run analysis/qc_harness.py)
 analysis/qc/
 
-# ── Sim comparison/visualization outputs (regenerable: analysis/compare_sims.py) ─
+# Sim comparison/visualization outputs (regenerable: analysis/compare_sims.py)
 analysis/sim_compare/
 
-# ── FSL outputs ───────────────────────────────────────────────────────────────
+# FSL outputs
 *.log
 
-# ── macOS ─────────────────────────────────────────────────────────────────────
+# macOS
 .DS_Store
 .AppleDouble
 .LSOverride
 __MACOSX/
 
-# ── Python ────────────────────────────────────────────────────────────────────
+# Python
 __pycache__/
 *.py[cod]
 *.pyo
@@ -54,10 +54,10 @@ build/
 venv/
 .env
 
-# ── Jupyter ───────────────────────────────────────────────────────────────────
+# Jupyter
 .ipynb_checkpoints/
 
-# ── Editor ────────────────────────────────────────────────────────────────────
+# Editor
 .vscode/
 .idea/
 *.swp
