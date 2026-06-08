@@ -4,12 +4,12 @@
 Models (data-driven, see MODELS below):
   ISO      — isotropic scalar conductivity (literature values)
   DTI      — anisotropic 'vn' from dwi2cond (FA-based classical baseline)
-  MD-dMRI  — anisotropic 'vn', σ ∝ ⟨D⟩_tissue free-water-eliminated QTI tensor
-             (tensor_MD_dMRI.nii.gz; the single novel MD-dMRI model)
+  MD-dMRI  — anisotropic 'vn', σ ∝ ⟨D⟩ (QTI mean tensor)  ->  tensor_MD_dMRI.nii.gz
 
-The plain mean tensor ⟨D⟩ (no free-water elimination) is the degenerate sensitivity case, built as
-tensor_MD_dMRI_meanD.nii.gz via `02_build_conductivity_tensor.py --meanD`; add it as a MODELS entry
-below only if a ⟨D⟩-vs-FWE sensitivity simulation is wanted.
+The ONLY thing that differs between the DTI and MD-dMRI models is the input tensor (QTI ⟨D⟩ vs
+single-shell DTI); the 'vn' mapping, mesh, electrodes, caps, and FEM are identical standard SimNIBS.
+Alternatives considered (free-water elimination, magnitude preservation, μFA) are kept under
+pipeline/internal/ for reference and are not part of the model.
 
 Montage: C3 (anode, left M1) → Fp2 (cathode, right supraorbital), 2 mA.
 
@@ -38,7 +38,7 @@ import numpy as np        # noqa: E402
 
 WDIR      = cfg["WORK_DIR"]
 SUBPATH   = f'm2m_{cfg["SUBJECT"]}'
-TENSOR_MD = os.path.join(WDIR, "tensor_MD_dMRI.nii.gz")   # canonical = σ ∝ ⟨D⟩_tissue (free-water-eliminated)
+TENSOR_MD = os.path.join(WDIR, "tensor_MD_dMRI.nii.gz")   # σ ∝ ⟨D⟩ (QTI mean tensor), standard 'vn'
 
 # Anisotropy caps applied IDENTICALLY to every 'vn' (anisotropic) model so a DTI↔MD-dMRI E-field
 # difference reflects the tensor source, not the clip. SimNIBS has TWO separate caps:

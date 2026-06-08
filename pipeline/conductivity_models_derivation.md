@@ -1,263 +1,147 @@
-# Anisotropic conductivity models for tDCS simulation
+# Anisotropic conductivity for tDCS simulation: the MD-dMRI model
 
-Three conductivity models drive the finite-element tDCS simulations in this pipeline,
-ordered by how much diffusion information they use:
+Three finite-element tDCS simulations are compared per subject. They share the same head model,
+electrodes, current, solver, and (for the two anisotropic models) the same SimNIBS conductivity
+mapping. **Only the input changes**, which is what makes this a controlled comparison:
 
-1. **DTI** — the conventional diffusion-tensor mapping (SimNIBS `dwi2cond`), our baseline.
-2. **σ ∝ ⟨D⟩** — the mean diffusion tensor from b-tensor-encoded MD-dMRI (QTI).
-3. **Free-water-eliminated σ ∝ ⟨D⟩_tissue** — a multi-compartment refinement that removes
-   the CSF partial-volume contribution.
+| Model | Conductivity input | SimNIBS setting |
+|---|---|---|
+| **ISO** | isotropic literature values | `anisotropy_type='scalar'` |
+| **DTI** | single-shell DTI tensor (dwi2cond) | `'vn'` |
+| **MD-dMRI** | QTI mean tensor ⟨D⟩ | `'vn'` |
 
-All three share the same physics for turning a diffusion tensor into a conductivity tensor;
-they differ only in which diffusion tensor they start from.
+The DTI model is the SimNIBS-standard anisotropy baseline. The **MD-dMRI model is the contribution:
+the same Tuch effective-medium / volume-normalized mapping, but fed the mean diffusion tensor ⟨D⟩
+from b-tensor-encoded MD-dMRI (QTI) instead of the single-shell DTI tensor.** Nothing downstream of
+the input tensor departs from standard SimNIBS.
 
-The novelty is methodological: (i) the first tDCS conductivity tensor derived from b-tensor-
-encoded MD-dMRI / QTI rather than single-shell DTI; (ii) a mean tensor ⟨D⟩ that is provably less
-biased by diffusional kurtosis and free water than the DTI tensor — the same macroscopic Tuch
-target, but a cleaner estimate; and (iii) free-water elimination applied to the conductivity
-tensor itself. This is an effective-medium model — one tensor per finite element — so σ depends
-on the macroscopic ⟨D⟩ only and makes no claim about intra-voxel/microscopic conductivity (μFA
-is therefore the wrong quantity and is excluded; see appendix).
+## From a diffusion tensor to a conductivity tensor
 
-## From diffusion to conductivity
+A diffusion tensor `D` is a symmetric positive-definite 3×3 matrix. Its eigen-decomposition
 
-Tuch et al. (2001) showed that in tissue, where the same microstructure (axons, membranes)
-restricts both water diffusion and ionic current, the conductivity tensor σ and the diffusion
-tensor D share eigenvectors and have linearly related eigenvalues:
+    D = λ1 v1 v1ᵀ + λ2 v2 v2ᵀ + λ3 v3 v3ᵀ ,   λ1 ≥ λ2 ≥ λ3 > 0
 
-    σ ∝ D
+gives three orthogonal eigenvectors v_k (the principal diffusion directions) and eigenvalues λ_k
+(diffusivities along them). The mean diffusivity is MD = (λ1+λ2+λ3)/3 = trace(D)/3.
 
-We pass D to SimNIBS with `anisotropy_type='vn'`, which applies the volume-normalised mapping
-of Güllmar et al. (2010) and Rullmann et al. (2009):
+Tuch et al. (2001) argued that in tissue the same microgeometry (cell membranes, axon walls)
+obstructs both water self-diffusion and ionic conduction, so the conductivity tensor σ and the
+diffusion tensor D **share eigenvectors** and have **linearly related eigenvalues**. There is no
+such link in free fluid; it exists only because both transport processes respect the same tissue
+boundaries. We use the eigenvector-sharing and proportionality, σ ∝ D.
 
-    σ(x) = σ_tissue(x) · D(x) / det[D(x)]^(1/3)
+SimNIBS applies this with `anisotropy_type='vn'` (volume normalization; Güllmar 2010, Rullmann 2009):
 
-The geometric-mean normalisation makes σ depend only on the *shape* (anisotropy and
-orientation) of D; the tissue's isotropic baseline conductivity sets the overall scale.
-SimNIBS bounds the conductivity tensor with two separate parameters, set identically for both
-anisotropic models so any E-field difference reflects the tensor source, not the clip. The
-binding one is `aniso_maxratio = 10`, which caps the eigenvalue **ratio** at 10:1 — the top of
-the 7–10:1 ex-vivo white-matter range (Nicholson 1965; Ranck & BeMent 1965); it clips ~0.1% of
-the DTI tensor and ~0.7% of the σ ∝ ⟨D⟩ tensor (median ratio 1.89, p95 4.10). The second,
-`aniso_maxcond = 2` S/m (the SimNIBS default), caps the eigenvalue **magnitude**; under
-volume-normalisation the conductivity eigenvalues sit at ~σ_tissue (≈0.13 S/m in WM), so it is
-essentially non-binding (<0.05% of voxels) and is *not* a ratio cap. (The ISO model has no
-tensor.) The tensor is supplied as a 6-component NIfTI in FSL order `[Dxx, Dxy, Dxz, Dyy, Dyz, Dzz]`.
+    σ(x) = σ0(x) · D(x) / det[D(x)]^(1/3)
 
-## Model 1 — DTI (baseline)
+`det(D)^(1/3)` is the geometric mean of the eigenvalues. Dividing by it makes the three conductivity
+eigenvalues have geometric mean 1; multiplying by the tissue's literature isotropic conductivity σ0
+sets the scale. So `'vn'` keeps only the **shape** of D (its anisotropy ratios and orientation) and
+pins the per-tissue geometric-mean conductivity to σ0 (WM 0.126, GM 0.275 S/m). Two consequences,
+both deliberate:
+- The mapping is robust to the absolute magnitude of D, which is the least reliable part of a 2.5 mm
+  diffusion measurement; magnitude is replaced by the trusted literature σ0.
+- It is the proportional / "volume-constrained" variant (Hallez 2009; what SimNIBS implements), which
+  approximates Tuch's affine eigenvalue relation σ_v = k(d_v − d_e) and slightly understates its
+  anisotropy. This is identical for the DTI and MD-dMRI models, so it does not affect their contrast.
 
-The baseline comes from a **separate single-shell DTI acquisition** (`sDTI_opt_80`, 80
-directions, b≈1500), collected in the **same subject and session** as the MD-dMRI (it is not the
-LTE subset of the b-tensor data). It is fitted with FSL `dtifit` and registered to the structural
-T1 with `dwi2cond --all` (eddy-current correction, nonlinear FA→T1 registration, tensor
-reorientation) — the standard SimNIBS anisotropy input. Its limitation is intrinsic to
-single-shell DTI: the apparent diffusion tensor averages over all fibre orientations in a voxel,
-so crossing fibres and orientation dispersion depress the measured anisotropy, and the
-mono-exponential fit is biased by non-Gaussian diffusion (kurtosis). Because it is a distinct
-sequence with its own distortions and registration, the DTI tensor differs from the MD-dMRI
-tensor in orientation as well as eigenvalues (quantified below), which the Model-vs-DTI contrast
-must be read in light of (see Limitations).
+SimNIBS bounds the tensor with two parameters, left at their **defaults** and identical for both
+anisotropic models: `aniso_maxratio = 10` (caps the eigenvalue ratio at 10:1; the binding one; top of
+the 7–10:1 ex-vivo WM range, Nicholson 1965 / Ranck & BeMent 1965; clips ~0.1% of DTI and ~0.7% of
+⟨D⟩ voxels) and `aniso_maxcond = 2` S/m (caps eigenvalue magnitude; non-binding under `'vn'`). The
+tensor is supplied as a 6-component NIfTI in FSL order `[Dxx, Dxy, Dxz, Dyy, Dyz, Dzz]`.
 
-## Model 2 — MD-dMRI (σ ∝ ⟨D⟩_tissue, free-water-eliminated)
+## DTI model (baseline)
 
-> This is the **single MD-dMRI model**. The QTI mean tensor ⟨D⟩ is described first as the basis, then
-> the free-water elimination that *defines* the model. Plain ⟨D⟩ without free-water elimination is the
-> degenerate **sensitivity** case (`02_build_conductivity_tensor.py --meanD`), not a separate model.
+A separate single-shell acquisition (`sDTI_opt_80`, 80 directions, b≈1500, same subject and session)
+is fitted with FSL `dtifit` and registered to T1 with `dwi2cond --all` (eddy correction, nonlinear
+FA→T1 registration, vecreg tensor reorientation) — the standard SimNIBS anisotropy path. Its
+limitation is intrinsic to single-shell DTI: the mono-exponential fit averages over all fibre
+orientations in a voxel and is biased by non-Gaussian diffusion (kurtosis), so crossing fibres and
+dispersion depress the measured anisotropy.
 
-b-tensor-encoded MD-dMRI (linear + spherical encoding, the QTI framework of Westin et al.
-2016) is fitted with the Topgaard `md-dmri` toolbox. The fit yields the mean diffusion tensor
-⟨D⟩ — the first cumulant of the intra-voxel diffusion-tensor distribution — stored in
-`dps.mat`. ⟨D⟩ is the same macroscopic quantity DTI estimates, but the spherical encoding
-separates isotropic from anisotropic variance, so ⟨D⟩ is less biased by diffusional kurtosis
-and free water than the single-shell DTI tensor.
+## MD-dMRI model (the contribution)
 
-The full tensor is reconstructed from the six `md??` fields (stored in SI units, m²/s) and
-used directly: σ ∝ ⟨D⟩. It is fully triaxial (three distinct eigenvalues), with principal
-eigenvector equal to the fit's `u`, trace equal to 3·MD, and extreme eigenvalues equal to the
-fit's `ad`/`rd`.
+b-tensor-encoded MD-dMRI (linear + spherical encoding; the QTI framework of Westin et al. 2016,
+Topgaard 2017) is fitted with the `md-dmri` toolbox. The fit yields the **mean diffusion tensor ⟨D⟩**
+— the first cumulant (mean) of the intra-voxel diffusion-tensor distribution — stored in `dps.mat`
+(fields `mdxx..mdyz`, SI units). ⟨D⟩ is the *same macroscopic quantity* DTI estimates, with
+MD = trace(⟨D⟩)/3, but estimated within a model that places the non-Gaussian variance in a separate
+covariance term rather than letting it bias the mean. So ⟨D⟩ is a **less kurtosis-biased** estimate
+of the macroscopic mean tensor than the single-shell DTI tensor. (It is *not* free-water corrected:
+like the DTI tensor it still contains any CSF partial volume; MD is high in the ventricles.)
 
-The MD-dMRI principal axis is the fit's `u` exactly: the mean tensor's first eigenvector equals
-`dps.u` to a median 0.01°. After registration to T1, `u` agrees with the *independent* single-shell
-DTI principal direction (dwi2cond V1) only moderately — a median of ~22° in core white matter
-(FA>0.5), rising to ~30° across all WM (FA>0.3; reproduced by `tests/validate_mean_tensor.py`).
-So the two anisotropic models differ in **orientation as well as eigenvalues**: the MD-dMRI-vs-DTI
-E-field difference is not a pure magnitude effect. It is *not* circular — each model carries its
-own independently estimated orientation (DTI from the sDTI fit, MD-dMRI from the QTI `u`).
+The full triaxial ⟨D⟩ is reconstructed from the six `md??` fields and used directly: σ ∝ ⟨D⟩. It is
+fully triaxial (three distinct eigenvalues in ~93% of brain voxels), with principal eigenvector equal
+to the fit's `u`, trace 3·MD, and extreme eigenvalues ad/rd. `tests/validate_mean_tensor.py`
+reproduces these identities from `dps.mat`.
 
-Empirically, the MD-dMRI and DTI conductivities deviate from each other by about as much as
-either deviates from an isotropic model (~5% median in brain tissue, ~20% at the 95th
-percentile, element-wise on a shared mesh). The deviation grows with diffusional kurtosis —
-the two models agree in Gaussian tissue and diverge where the DTI mono-exponential assumption
-fails — which is consistent with ⟨D⟩ being the less-biased estimate.
-
-### Free-water elimination — the defining step of the MD-dMRI model
-
-The QTI fit also resolves each voxel into three fixed-diffusivity compartments with signal
-fractions f₀+f₁+f₂ = 1: anisotropic tissue (low MD), restricted tissue, and free water (the CSF
-compartment, observed bin MD ≈ 3.3 µm²/ms — consistent with the literature free-water value of
-≈ 3.0 µm²/ms at 37 °C; median fraction f₂ ≈ 0.24 brain-wide). This decomposition is impossible
-with single-shell DTI; separating compartments by *shape* requires the spherical encoding.
-
-Free water has high, isotropic diffusivity, so any CSF partial volume biases ⟨D⟩ toward
-isotropy and masks the true tissue anisotropy. We remove it (free-water elimination,
-Pasternak et al. 2009) and renormalise over the tissue compartments:
-
-    ⟨D⟩_tissue = (f₀·D₀ + f₁·D₁) / (f₀ + f₁) ,   σ ∝ ⟨D⟩_tissue
-
-The principal axis is anchored to the validated Model-2 direction, so only the eigenvalues
-(the free-water-corrected anisotropy) change relative to plain ⟨D⟩ — isolating the free-water
-effect. Where the tissue fraction is too small to be reliable (f₀+f₁ < 0.30, near-pure CSF)
-the model falls back to ⟨D⟩.
-
-This is a de-biasing correction, not an anisotropy inflation: where there is no free water it
-reduces to plain ⟨D⟩ exactly; where CSF contaminates the voxel it recovers the masked tissue
-anisotropy (median λ1/λ3 over the QTI brain mask rises from 1.92 for ⟨D⟩ to 2.13 for ⟨D⟩_tissue;
-the per-voxel correction scales with free-water fraction). SimNIBS already models bulk CSF as a separate tissue, so removing
-the CSF compartment from the WM/GM tensor is consistent with how the head model is built. The
-effect on the E-field is small (~2% median) but concentrated in the high-CSF deep targets
-(substantia nigra, VTA), where partial volume is worst.
+The principal axis (`dps.u`) agrees with the *independent* single-shell DTI V1 only moderately —
+~22° median in core WM (FA>0.5), ~30° across all WM. So the DTI↔MD-dMRI E-field contrast reflects
+**both** the eigenvalue (tensor-estimation) difference **and** a ~22–30° orientation difference from
+the separate DTI acquisition; it is not a magnitude-only comparison. Empirically the two
+conductivities deviate ~5% (median) to ~17% (p95) in white matter, concentrated where the DTI
+mono-exponential assumption fails, consistent with ⟨D⟩ being the less-biased estimate.
 
 ## Registration
 
-The diffusion tensors live on the 2.5 mm MD-dMRI grid and must be brought to the 1 mm
-structural/mesh grid, which requires *reorienting* the tensor, not just resampling its six
-components. We decompose it: the three eigenvalues are interpolated **independently** as scalar
-maps (FLIRT trilinear), and the orientation frame is carried by `vecreg` (preservation-of-
-principal-direction reorientation, Alexander et al. 2001), with the principal axis anchored to
-`dps.u` (`v1_T1`).
+The diffusion tensors live on the 2.5 mm dMRI grid and must be brought to the 1 mm structural/mesh
+grid, which requires *reorienting* the tensor, not just resampling its components. We decompose it:
+the three eigenvalues are interpolated **independently** as scalar maps (FLIRT trilinear), and the
+orientation frame is carried by `vecreg` (preservation-of-principal-direction reorientation,
+Alexander 2001), with the principal axis anchored to `dps.u` (`v1_T1`). After interpolation the
+eigenvalue maps are re-sorted to λ1≥λ2≥λ3 and paired with the frame **by magnitude order**, so a
+boundary voxel where two maps cross cannot mis-assign eigenvalue to eigenvector.
 
-Whole-tensor component-wise trilinear interpolation, by contrast, averages neighbouring tensors
-and shrinks the anisotropy (median λ1/λ3 1.92 → 1.28 here) — the tensor "swelling"/dilution that
-log-Euclidean interpolation (Arsigny et al. 2006) and PPD reorientation are designed to avoid.
-Our scheme is a pragmatic stand-in for full log-Euclidean tensor interpolation (e.g. DTI-TK):
-it preserves the native anisotropy at the cost of not reproducing the genuine partial-volume
-blurring that the 2.5 mm resolution incurs — a deliberate, disclosed trade-off.
-
-**Pairing validity.** Because the eigenvalue maps are interpolated independently, they could in
-principle mis-pair with the separately reoriented frame. They cannot here: after interpolation
-the three maps are re-sorted to λ1≥λ2≥λ3 and paired with the frame **by magnitude order**
-(largest → principal axis), not by map identity, so a boundary voxel where two maps cross cannot
-mis-assign eigenvalue to eigenvector. The principal axis is the validated `dps.u`; its agreement
-with the independent single-shell DTI V1 (~22° median in core WM, ~30° across all WM) is given in
-the Model 2 section and reproduced by `tests/validate_mean_tensor.py`.
+Whole-tensor component-wise interpolation, by contrast, averages neighbouring tensors and shrinks the
+anisotropy (median λ1/λ3 1.92 → 1.28 here) — the tensor "swelling" that log-Euclidean interpolation
+(Arsigny 2006) and PPD reorientation are designed to avoid. Our scheme is a pragmatic stand-in for
+full log-Euclidean tensor interpolation (e.g. DTI-TK): it preserves the native anisotropy at the cost
+of not reproducing the partial-volume blurring the 2.5 mm resolution incurs — a disclosed trade-off,
+and the one step where the MD-dMRI pipeline is less standardized than dwi2cond's fnirt+vecreg path.
 
 ## ROI definition
 
-E-field and microstructure are read out over anatomical atlas masks, not coordinate
-spheres. Spheres at MNI coordinates overlapped heavily in the midbrain — substantia
-nigra and VTA sit only a few mm apart — so neighbouring nuclei shared most of their
-voxels. Atlas masks follow the real anatomy and (after a winner-take-all assignment)
-never share a voxel.
-
-- **Basal ganglia** — HarvardOxford-Subcortical (caudate, putamen, pallidum). The
-  pallidum label is the whole globus pallidus; GPe and GPi are deliberately merged
-  (they are not separable here and the atlas does not split them). HarvardOxford is on
-  the MNI152 182×218×182 grid, identical to CHARM's MNI output, so masks warp into
-  subject space through the CHARM deformation with no intermediate resampling.
-- **Midbrain** — CIT168/Pauli 2017, the only standard atlas that resolves SNc/SNr/VTA.
-  The three are merged into one SN/VTA ROI (inseparable at the 2.5/3 mm diffusion/MRE
-  resolution, and alike in Olsson et al. 2025); the red nucleus is dropped. CIT168 is in
-  MNI152-2009c, bridged to the NLin6/CHARM space with one affine registration (the
-  midbrain is central, where the two MNI variants differ by ~1–2 mm) before the CHARM
-  warp. Round-tripping each warped ROI centroid back to MNI lands within 1–2 mm of the
-  atlas coordinate.
-- **Cortex** — the L_M1 reference under the C3 anode stays a small sphere; cortical GM is
-  well resolved and has no neighbouring-structure overlap.
-
-Built by `analysis/06_build_atlas_rois.sh`; shared by `04` and `05` via `_atlas_rois.py`.
+E-field and microstructure are read out over anatomical atlas masks, not coordinate spheres
+(neighbouring midbrain nuclei sit only a few mm apart and overlapped as spheres). Basal ganglia from
+HarvardOxford-Subcortical; midbrain SN/VTA from CIT168/Pauli 2017 (merged, inseparable at
+2.5/3 mm); the cortical M1 reference under the C3 anode stays a small sphere. See
+`analysis/06_build_atlas_rois.sh`.
 
 ## Limitations
 
-- **Resolution.** The MD-dMRI is acquired at 2.5 mm (an SNR-versus-time trade-off on this
-  protocol, not a scanner limit). Conductivity tensors inherit this grid and are always
-  coarser than the 1 mm segmentation. Small deep nuclei (substantia nigra, STN) are smaller
-  than a voxel, so partial volume biases both the segmentation and the per-voxel tensor at
-  exactly the targets of interest. Per-voxel tensors in and around these nuclei should not be
-  over-interpreted; free-water elimination mitigates but cannot remove this bias.
-- **Validation.** No in-vivo conductivity ground truth exists, so the choice between models is
-  motivated by bias arguments, not direct validation. MR current-density imaging
-  (MRCDI/MREIT; Gregersen et al. 2024) is the planned validation route — comparing simulated
-  and measured current-induced magnetic fields.
-- **DTI baseline acquisition.** The DTI model uses a *separate* single-shell `sDTI_opt_80`
-  acquisition (same subject and session), registered independently of the MD-dMRI. Its principal
-  direction differs from the MD-dMRI `u` by ~22–30° (above), so the Model-vs-DTI E-field contrast
-  reflects acquisition and orientation differences as well as the tensor-estimation method — it
-  is not a controlled same-data comparison of magnitude alone.
-- **Scope.** The conductivity mapping is the macroscopic Tuch relation; microscopic anisotropy
-  (μFA) is deliberately not used (see appendix).
+- **Resolution.** MD-dMRI is acquired at 2.5 mm; small deep nuclei (SN, STN) are near or below a
+  voxel, so partial volume biases the per-voxel tensor at exactly the PD targets of interest.
+- **Magnitude is discarded by `'vn'`.** Conductivity magnitude is set by literature σ0, not by the
+  measured ⟨D⟩. This is deliberate (per-voxel diffusion magnitude at 2.5 mm is unreliable: within-WM
+  geometric-mean CoV ≈ 46%, mostly partial volume and noise), but it means disease-related MD changes
+  enter only through anisotropy/orientation, not magnitude. See `pipeline/internal/README.md`.
+- **Validation.** No in-vivo conductivity ground truth exists; the model is motivated by bias
+  arguments, not direct validation. MR current-density imaging (MRCDI/MREIT; Gregersen 2024) is the
+  planned validation route.
+- **DTI baseline.** The DTI model is a separate single-shell acquisition registered independently, so
+  its principal direction differs from ⟨D⟩ by ~22–30°; the contrast is not a same-data comparison of
+  magnitude alone.
 
 ## References
 
-Tuch et al. (2001) PNAS — conductivity ∝ diffusion tensor.
-Güllmar et al. (2010) NeuroImage — volume-normalised mapping.
-Rullmann et al. (2009) NeuroImage — anisotropic FEM head model.
-Westin et al. (2016) NeuroImage 135 — q-space trajectory imaging (QTI); ⟨D⟩ + covariance; MD = tr⟨D⟩/3 (Eq. 14).
-Topgaard (2017) J Magn Reson 275 — diffusion tensor distributions; b-tensor encoding (Eq. 20–24); DTD signal S=S0∫P(D)e^(−b:D)dD (Eq. 40, 46); NNLS components s=K·p (Eq. 43).
-Lampinen et al. (2017) NeuroImage 147 — microscopic anisotropy (μFA) requires variable b-tensor shape; isotropic free-water compartment d_FW = 3.0 µm²/ms (Eq. 4).
-Lasič et al. (2014) Front Phys / Szczepankiewicz et al. (2016) NeuroImage — μFA definition (the `dps.ufa` field; deliberately NOT used here).
-Pasternak et al. (2009) MRM — free-water elimination.
-Nicholson (1965) Exp Neurol — ex-vivo WM conductivity anisotropy ~9:1.
-Ranck & BeMent (1965) Exp Neurol — ex-vivo WM conductivity anisotropy ~7:1.
-Alexander et al. (2001) IEEE TMI — preservation-of-principal-direction tensor reorientation.
+Tuch et al. (2001) PNAS — conductivity ∝ diffusion tensor (effective medium).
+Güllmar et al. (2010) NeuroImage 51 — volume-normalized mapping (Eq. 3–4).
+Rullmann et al. (2009) NeuroImage 44 — volume-constrained anisotropic FEM head model.
+Westin et al. (2016) NeuroImage 135 — QTI; ⟨D⟩ + covariance; MD = tr⟨D⟩/3 (Eq. 14).
+Topgaard (2017) J Magn Reson 275 — diffusion tensor distributions; b-tensor signal model (Eq. 40).
+Lampinen et al. (2017) NeuroImage 147 — microscopic anisotropy needs variable b-tensor shape; d_FW = 3.0 µm²/ms.
+Nicholson (1965) / Ranck & BeMent (1965) Exp Neurol — ex-vivo WM conductivity anisotropy 7–10:1.
+Alexander et al. (2001) IEEE TMI — preservation-of-principal-direction reorientation.
 Arsigny et al. (2006) MRM — log-Euclidean tensor interpolation.
 Gregersen et al. (2024) Imaging Neuroscience — MRCDI for head-model validation.
-Makris et al. (2006) / HarvardOxford-Subcortical atlas (FSL) — basal-ganglia ROIs.
-Pauli et al. (2018) Sci Data — CIT168 probabilistic subcortical atlas (SN/VTA ROI).
 
-### Provenance of the MD-dMRI constants (verified field-by-field against the papers + `md-dmri` source)
+## Appendix — alternatives evaluated and not used
 
-`fit/dps.mat` is produced by the Topgaard `md-dmri` toolbox, method `dtd`, function
-`methods/dtd/dtd_dtds2dps.m` → `tools/tensor_maths/tm_dt_to_dps.m`. Each field maps to QTI/DTD theory:
-
-| `dps` field | Quantity | Source | Units stored |
-|---|---|---|---|
-| `mdxx..mdyz` | mean tensor ⟨D⟩ = Σ_k f_k D_k — first moment of the DTD, **over ALL compartments** | Westin 2016; Topgaard 2017 Eq. 56; code lines 27–32 | SI m²/s (~1e-9) → ×1e9 = µm²/ms |
-| `MD` | tr(⟨D⟩)/3 | Westin 2016 Eq. 14; `tm_md` | µm²/ms (code ×1e9, line 73) |
-| `ad`, `rd` | λ1 and (λ2+λ3)/2 of ⟨D⟩ | `tm_dt_to_dps.m` L37–38 | µm²/ms |
-| `u` | principal eigenvector of ⟨D⟩ | `tm_dt_to_dps.m` L39 | unit vector |
-| `bin` | DTD NNLS components (f_k, D_k); free water = highest-MD isotropic bin (here MD≈3.34) | Topgaard 2017 Eq. 43 | SI m²/s |
-| `ufa` | μFA (microscopic FA) — **deliberately unused** | Szczepankiewicz 2016 (`dtds2dps.m` L58) | — |
-
-- **⟨D⟩ is NOT free-water-corrected.** Westin 2016 (Fig. 9: "MD is high in the ventricles … where there is
-  CSF") and Topgaard 2017 (Fig. 7: ⟨D⟩ identical across CSF-containing voxels) state the mean tensor folds the
-  free-water bin in. Empirically `dps.MD = Σ_k f_k·MD_k` exactly (incl. the 3.34-µm²/ms free-water bin),
-  brain-median 1.53 with free water vs 0.95 after FWE. **This is the justification for the free-water elimination** (FWE recombines
-  only the tissue bins; Pasternak 2009; Lampinen 2017 Eq. 4).
-- **μFA is rejected for conductivity** because it is a *microscopic*, orientation-dispersion-invariant measure
-  (from the powder-averaged signal; Lampinen 2017) with no coherent macroscopic direction — whereas the
-  effective-medium conductivity (Tuch 2001) needs the macroscopic ⟨D⟩ whose principal eigenvector is the current
-  direction.
-- **Fully triaxial:** three independent eigenvalues; verified 90–95% of brain voxels genuinely triaxial
-  (λ2≠λ3 in 99–100%; ~75% prolate-leaning, ~25% oblate-leaning) — a cylindrical (λ2=λ3) ad/rd form would misfit
-  the oblate/planar voxels (the scrapped Model in the appendix).
-- **Units verified end-to-end:** `dtd_dtds2dps.m:73` derives MD/ad/rd from the ×1e9-scaled tensor while
-  `mdxx..mdyz` stay SI — matching `01d` (scales ×1e9) vs `01c` (reads as-is); `trace(mdxx×1e9)/3 == dps.MD` to
-  machine zero.
-
----
-
-## Appendix — model development notes
-
-Approaches evaluated and not carried forward:
-
-- **μFA-derived microscopic anisotropy.** μFA measures per-compartment anisotropy and is
-  larger than macroscopic FA wherever fibres disperse or cross. But those are exactly the
-  voxels with no coherent current direction, where the effective (voxel-scale) conductivity
-  the FEM needs is near-isotropic. μFA would impose strong anisotropy along an arbitrary axis,
-  so it is the wrong quantity for conductivity despite being the unique MD-dMRI measurement.
-- **Cylindrical ad/rd tensor.** An interim model used only the two extreme eigenvalues
-  (ad, rd) with λ₂=λ₃, on the mistaken assumption that the full mean-tensor components were
-  unavailable. They were present in `dps.mat` (in SI units); Model 2 uses the full triaxial
-  tensor and supersedes this.
-- **Oblate-corrected / two-tier prolate variants.** Earlier attempts to special-case oblate
-  voxels and to fall back to isotropic conductivity in dispersed voxels. The full triaxial
-  mean tensor handles oblate geometry directly, making these unnecessary.
-- **Fraction-weighted multi-compartment mixing** (σ_eff = Σ fₖ·D̂ₖ with per-compartment
-  normalisation). This over-diluted the anisotropic compartment and rotated the principal
-  axis ~23° off the validated direction. Free-water elimination is the cleaner,
-  better-behaved multi-compartment formulation.
-
-A note on the data: every field in `dps.mat` is populated inside the brain mask. Diffusivities
-are stored in SI units (≈10⁻⁹ m²/s), so variances are ≈10⁻¹⁸ and fourth-order moments ≈10⁻³⁶ —
-small in magnitude but not zero. Any inspection must test at SI precision. The QTI second
-moments (free-water variance, kurtosis) are available but unused by the current models.
+Free-water elimination (σ ∝ ⟨D⟩_tissue), magnitude preservation (`'dir'` / per-tissue), and μFA /
+covariance were each tested and rejected. The reasoning and the pilot evidence are in
+`pipeline/internal/README.md`; the FWE script is `pipeline/internal/01e_save_multicompartment_tensor.py`.
+In brief: FWE is ~null under `'vn'` and ill-posed at this volume count; magnitude preservation injects
+~46%-CoV partial-volume/noise (and SimNIBS `'dir'` also distorts the GM/WM contrast); μFA and the
+covariance tensor are microscopic measures with no macroscopic eigenframe, so they cannot define a
+conductivity tensor (they remain useful for interpretation).

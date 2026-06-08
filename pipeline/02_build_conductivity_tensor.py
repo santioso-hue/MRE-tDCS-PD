@@ -1,10 +1,16 @@
 """
-02_build_conductivity_tensor.py — Build THE MD-dMRI conductivity tensor.
+02_build_conductivity_tensor.py — Build THE MD-dMRI conductivity tensor (σ ∝ ⟨D⟩).
 
-The single canonical MD-dMRI model is FREE-WATER-ELIMINATED: σ ∝ ⟨D⟩_tissue, the QTI mean tensor
-with the CSF compartment removed (01e lineage). It reduces to the plain mean tensor ⟨D⟩ wherever
-there is no free water to remove (and via the FT_MIN fallback in near-pure CSF), so plain ⟨D⟩ is the
-degenerate special case — buildable as a sensitivity with `--meanD`, NOT a separate model.
+The single MD-dMRI model is the QTI mean diffusion tensor ⟨D⟩ (the first cumulant of the
+intra-voxel diffusion-tensor distribution) mapped to conductivity by the standard SimNIBS 'vn'
+(volume-normalized) rule. The downstream physics is IDENTICAL to dwi2cond's DTI model; only the
+input tensor differs (QTI ⟨D⟩ vs single-shell DTI). So ISO / DTI / MD-dMRI is a controlled
+comparison that isolates the input-tensor estimation, and nothing else departs from standard SimNIBS.
+
+Alternatives evaluated and NOT used (free-water elimination, magnitude preservation, μFA/covariance)
+are kept for internal reference under pipeline/internal/ — see that folder's README for why each was
+rejected (FWE: ~0% field effect under 'vn' and ill-posed at this volume count; magnitude: injects
+~46%-CoV partial-volume/noise; μFA & covariance: microscopic, no macroscopic eigenframe).
 
 Registering a diffusion tensor to the structural grid must REORIENT it, not just resample the
 components. Eigen-decomposition approach:
@@ -19,8 +25,7 @@ the three scalar maps are re-SORTED to λ1≥λ2≥λ3 and re-paired with the fr
 Reconstruct (T1 space):  D = Σ_k λk_T1 · v_k v_kᵀ   (k=1,2,3)
 
 Usage:
-  simnibs_python pipeline/02_build_conductivity_tensor.py            # MD-dMRI (default) -> tensor_MD_dMRI.nii.gz
-  simnibs_python pipeline/02_build_conductivity_tensor.py --meanD    # plain ⟨D⟩ sensitivity -> tensor_MD_dMRI_meanD.nii.gz
+  simnibs_python pipeline/02_build_conductivity_tensor.py    ->  tensor_MD_dMRI.nii.gz
 
 Model: σ ∝ D — Tuch 2001 effective medium (shared eigenvectors; σ-anisotropy = D-anisotropy) +
 Güllmar 2010 / Rullmann 2009 volume normalization (SimNIBS 'vn'). Fully triaxial (λ2≠λ3 in ~93%).
@@ -38,20 +43,12 @@ RDIR = os.path.join(WDIR, "registration")
 M2M  = cfg["M2M_DIR"]
 EPS  = 1e-3   # min eigenvalue, µm²/ms (VN-safe)
 
-# model -> (eigenvalue-map prefix template, orientation-frame file, output name, label)
-# Default = the MD-dMRI model (free-water-eliminated ⟨D⟩_tissue). '--meanD' = the plain-⟨D⟩ sensitivity.
-MODELS = {
-    "mddmri": ("lam{}_mc_T1", "tensor_mc_T1.nii.gz",       "tensor_MD_dMRI.nii.gz",
-               "σ ∝ ⟨D⟩_tissue, free-water-eliminated — the MD-dMRI model"),
-    "meanD":  ("lam{}_T1",    "tensor_triaxial_T1.nii.gz", "tensor_MD_dMRI_meanD.nii.gz",
-               "σ ∝ ⟨D⟩, plain mean tensor — sensitivity / degenerate case"),
-}
-arg = sys.argv[1].lstrip("-") if len(sys.argv) > 1 else "mddmri"
-model = {"meanD": "meanD", "mddmri": "mddmri"}.get(arg)
-if model is None:
-    raise SystemExit(f"model must be the default (MD-dMRI) or '--meanD'; got {sys.argv[1]!r}")
-lam_fmt, frame_name, out_name, label = MODELS[model]
-print(f"MD-dMRI conductivity tensor — model={model}: {label}")
+# The single MD-dMRI model: plain QTI mean tensor ⟨D⟩, mapped by SimNIBS 'vn'.
+# eigenvalue scalar maps (magnitude) + reoriented tensor frame (in-plane orientation), both from 01d.
+lam_fmt    = "lam{}_T1"
+frame_name = "tensor_triaxial_T1.nii.gz"
+out_name   = "tensor_MD_dMRI.nii.gz"
+print("MD-dMRI conductivity tensor — σ ∝ ⟨D⟩ (QTI mean tensor) -> SimNIBS 'vn'")
 
 print("Loading scalar eigenvalues + orientation frame...")
 lam1 = nib.load(os.path.join(RDIR, lam_fmt.format(1) + ".nii.gz")).get_fdata().astype(np.float64)
