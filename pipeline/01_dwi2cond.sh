@@ -1,5 +1,5 @@
 #!/bin/bash
-# 00_dwi2cond.sh — Fit DTI conductivity tensors for the DTI model (SimNIBS dwi2cond)
+# 01_dwi2cond.sh — Fit the DTI conductivity tensor for the DTI baseline model (SimNIBS dwi2cond)
 #
 # CORRECTION (supersedes the earlier "bypass" version of this script):
 #   A previous version claimed dwi2cond had a bvec/bval argument-swap bug and implemented
@@ -20,8 +20,7 @@
 # Idempotent:    skips if the coregistered tensor already exists.
 #
 # Usage:
-#   cd /Users/santi/Documents/MRE_tDCS_PD/FullPD5_segmentation
-#   bash scripts/00_dwi2cond.sh
+#   bash pipeline/01_dwi2cond.sh
 #   # inspect registration afterwards:  dwi2cond --check "$SUBJECT"
 #
 # Runtime: ~6 min
@@ -72,4 +71,4 @@ echo ""
 echo "dwi2cond complete."
 echo "  Tensor:  $TENSOR  (SimNIBS reads this for anisotropy_type='vn')"
 echo "  Check registration visually:  dwi2cond --check $SUBJECT"
-echo "Next: run the DTI simulation (03_run_simulations.py / SimNIBS with anisotropy_type='vn')."
+echo "Next: run the DTI simulation (04_run_simulations.py / SimNIBS with anisotropy_type='vn')."

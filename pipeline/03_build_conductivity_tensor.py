@@ -1,5 +1,5 @@
 """
-02_build_conductivity_tensor.py — Build THE MD-dMRI conductivity tensor (σ ∝ ⟨D⟩).
+03_build_conductivity_tensor.py — Build THE MD-dMRI conductivity tensor (σ ∝ ⟨D⟩).
 
 The single MD-dMRI model is the QTI mean diffusion tensor ⟨D⟩ (the first cumulant of the
 intra-voxel diffusion-tensor distribution) mapped to conductivity by the standard SimNIBS 'vn'
@@ -7,10 +7,9 @@ intra-voxel diffusion-tensor distribution) mapped to conductivity by the standar
 input tensor differs (QTI ⟨D⟩ vs single-shell DTI). So ISO / DTI / MD-dMRI is a controlled
 comparison that isolates the input-tensor estimation, and nothing else departs from standard SimNIBS.
 
-Alternatives evaluated and NOT used (free-water elimination, magnitude preservation, μFA/covariance)
-are kept for internal reference under pipeline/internal/ — see that folder's README for why each was
-rejected (FWE: ~0% field effect under 'vn' and ill-posed at this volume count; magnitude: injects
-~46%-CoV partial-volume/noise; μFA & covariance: microscopic, no macroscopic eigenframe).
+Alternatives evaluated and rejected (free-water elimination: ~0% field effect under 'vn' and ill-posed
+at this volume count; magnitude preservation: injects ~46%-CoV partial-volume noise; μFA/covariance:
+microscopic, no macroscopic eigenframe). The reasoning is in conductivity_models_derivation.md.
 
 Registering a diffusion tensor to the structural grid must REORIENT it, not just resample the
 components. Eigen-decomposition approach:
@@ -25,7 +24,7 @@ the three scalar maps are re-SORTED to λ1≥λ2≥λ3 and re-paired with the fr
 Reconstruct (T1 space):  D = Σ_k λk_T1 · v_k v_kᵀ   (k=1,2,3)
 
 Usage:
-  simnibs_python pipeline/02_build_conductivity_tensor.py    ->  tensor_MD_dMRI.nii.gz
+  simnibs_python pipeline/03_build_conductivity_tensor.py    ->  tensor_MD_dMRI.nii.gz
 
 Model: σ ∝ D — Tuch 2001 effective medium (shared eigenvectors; σ-anisotropy = D-anisotropy) +
 Güllmar 2010 / Rullmann 2009 volume normalization (SimNIBS 'vn'). Fully triaxial (λ2≠λ3 in ~93%).
@@ -136,4 +135,4 @@ out_path = os.path.join(WDIR, out_name)
 hdr = timg.header.copy(); hdr.set_data_shape(out.shape); hdr.set_data_dtype(np.float32)
 nib.save(nib.Nifti1Image(out, affine, hdr), out_path)
 print(f"\nSaved: {out_path}")
-print("Next: run 03_run_simulations.py (SimNIBS anisotropy_type='vn').")
+print("Next: run 04_run_simulations.py (SimNIBS anisotropy_type='vn').")

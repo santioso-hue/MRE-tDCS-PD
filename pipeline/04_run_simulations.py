@@ -1,5 +1,5 @@
 """
-03_run_simulations.py — Run the tDCS conductivity-model simulations for one subject.
+04_run_simulations.py — Run the tDCS conductivity-model simulations for one subject.
 
 Models (data-driven, see MODELS below):
   ISO      — isotropic scalar conductivity (literature values)
@@ -8,15 +8,15 @@ Models (data-driven, see MODELS below):
 
 The ONLY thing that differs between the DTI and MD-dMRI models is the input tensor (QTI ⟨D⟩ vs
 single-shell DTI); the 'vn' mapping, mesh, electrodes, caps, and FEM are identical standard SimNIBS.
-Alternatives considered (free-water elimination, magnitude preservation, μFA) are kept under
-pipeline/internal/ for reference and are not part of the model.
+Alternatives considered (free-water elimination, magnitude preservation, μFA) were rejected; see
+pipeline/conductivity_models_derivation.md.
 
 Montage: C3 (anode, left M1) → Fp2 (cathode, right supraorbital), 2 mA.
 
 Usage (run in WORK_DIR; SimNIBS resolves subpath/pathfem relative to CWD):
-  simnibs_python pipeline/03_run_simulations.py                # all models
-  simnibs_python pipeline/03_run_simulations.py MD-dMRI        # re-run a single model only
-  simnibs_python pipeline/03_run_simulations.py ISO DTI        # a subset
+  simnibs_python pipeline/04_run_simulations.py                # all models
+  simnibs_python pipeline/04_run_simulations.py MD-dMRI        # re-run a single model only
+  simnibs_python pipeline/04_run_simulations.py ISO DTI        # a subset
 
 Requirements: m2m_<subject>/ (CHARM); dwi2cond output (DTI); tensor_MD_dMRI.nii.gz (02).
 NOTE: do NOT pass fn_tensor_nifti with tms_flex_opt/tes_flex_opt — documented SimNIBS bug.
@@ -87,7 +87,7 @@ def run_model(m):
     s.pathfem = m["pathfem"]
     if m["tensor"] is not None:
         if not os.path.exists(m["tensor"]):
-            return FileNotFoundError(f"{m['tensor']} not found — run 02_build_conductivity_tensor.py")
+            return FileNotFoundError(f"{m['tensor']} not found — run 03_build_conductivity_tensor.py")
         validate_tensor(m["tensor"])
         # CRITICAL: set fname_tensor on the SESSION, NOT fn_tensor_nifti on the TDCSLIST.
         # SESSION._prepare() unconditionally overwrites PL.fn_tensor_nifti = self.fname_tensor

@@ -328,8 +328,8 @@ def qc_rois(P):
     return m, f
 
 
-STAGES = [("00_charm", qc_charm), ("00_dwi2cond", qc_dwi2cond), ("01_register", qc_register),
-          ("02_conductivity", qc_conductivity), ("03_sims", qc_sims), ("04_rois", qc_rois)]
+STAGES = [("00_charm", qc_charm), ("01_dwi2cond", qc_dwi2cond), ("02_register", qc_register),
+          ("03_conductivity", qc_conductivity), ("04_sims", qc_sims), ("05_rois", qc_rois)]
 
 
 def resolve_subjects(args):

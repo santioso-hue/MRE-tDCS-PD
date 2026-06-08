@@ -115,7 +115,7 @@ HarvardOxford-Subcortical; midbrain SN/VTA from CIT168/Pauli 2017 (merged, insep
 - **Magnitude is discarded by `'vn'`.** Conductivity magnitude is set by literature σ0, not by the
   measured ⟨D⟩. This is deliberate (per-voxel diffusion magnitude at 2.5 mm is unreliable: within-WM
   geometric-mean CoV ≈ 46%, mostly partial volume and noise), but it means disease-related MD changes
-  enter only through anisotropy/orientation, not magnitude. See `pipeline/internal/README.md`.
+  enter only through anisotropy/orientation, not magnitude.
 - **Validation.** No in-vivo conductivity ground truth exists; the model is motivated by bias
   arguments, not direct validation. MR current-density imaging (MRCDI/MREIT; Gregersen 2024) is the
   planned validation route.
@@ -139,9 +139,8 @@ Gregersen et al. (2024) Imaging Neuroscience — MRCDI for head-model validation
 ## Appendix — alternatives evaluated and not used
 
 Free-water elimination (σ ∝ ⟨D⟩_tissue), magnitude preservation (`'dir'` / per-tissue), and μFA /
-covariance were each tested and rejected. The reasoning and the pilot evidence are in
-`pipeline/internal/README.md`; the FWE script is `pipeline/internal/01e_save_multicompartment_tensor.py`.
-In brief: FWE is ~null under `'vn'` and ill-posed at this volume count; magnitude preservation injects
+covariance were each tested and rejected. In brief: FWE is ~null under `'vn'` and ill-posed at this
+volume count; magnitude preservation injects
 ~46%-CoV partial-volume/noise (and SimNIBS `'dir'` also distorts the GM/WM contrast); μFA and the
 covariance tensor are microscopic measures with no macroscopic eigenframe, so they cannot define a
 conductivity tensor (they remain useful for interpretation).

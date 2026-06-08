@@ -10,9 +10,6 @@ charm_ernie/
 # Papers / literature
 papers/
 
-# Claude working files
-CLAUDE.md
-
 # Large binary/data file types
 *.nii
 *.nii.gz
@@ -32,6 +29,9 @@ analysis/qc/
 
 # Sim comparison/visualization outputs (regenerable: analysis/compare_sims.py)
 analysis/sim_compare/
+
+# Analysis result tables (regenerable: re-run the analysis scripts)
+analysis/results/
 
 # FSL outputs
 *.log
