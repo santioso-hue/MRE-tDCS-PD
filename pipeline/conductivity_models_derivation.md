@@ -36,7 +36,10 @@ SimNIBS applies this with `anisotropy_type='vn'` (volume normalization; Güllmar
 
 `det(D)^(1/3)` is the geometric mean of the eigenvalues. Dividing by it makes the three conductivity
 eigenvalues have geometric mean 1; multiplying by the tissue's literature isotropic conductivity σ0
-sets the scale. So `'vn'` keeps only the **shape** of D (its anisotropy ratios and orientation) and
+sets the scale. (The SimNIBS GUI and TDCSLIST documentation describe this as a *trace* normalization,
+but the implemented code divides by the **geometric mean** `det(D)^(1/3)`, not the trace — verified in
+SimNIBS 4.6 `cond_utils.cond2elmdata`; the "trace" wording is a documentation error.) So `'vn'` keeps
+only the **shape** of D (its anisotropy ratios and orientation) and
 pins the per-tissue geometric-mean conductivity to σ0 (WM 0.126, GM 0.275 S/m). Two consequences,
 both deliberate:
 - The mapping is robust to the absolute magnitude of D, which is the least reliable part of a 2.5 mm
@@ -50,6 +53,19 @@ anisotropic models: `aniso_maxratio = 10` (caps the eigenvalue ratio at 10:1; th
 the 7–10:1 ex-vivo WM range, Nicholson 1965 / Ranck & BeMent 1965; clips ~0.1% of DTI and ~0.7% of
 ⟨D⟩ voxels) and `aniso_maxcond = 2` S/m (caps eigenvalue magnitude; non-binding under `'vn'`). The
 tensor is supplied as a 6-component NIfTI in FSL order `[Dxx, Dxy, Dxz, Dyy, Dyz, Dzz]`.
+
+Exact `'vn'` implementation, verified against SimNIBS 4.6 `cond_utils.cond2elmdata` / `_fix_eigv`
+(master-branch code — pin the methods to this version). Per element: (1) eigenvalues are normalized to
+geometric mean 1 by dividing by `|det|^(1/3)`; (2) clamped — magnitude to `aniso_maxcond`, then any
+eigenvalue below `λ1/aniso_maxratio` is raised to `λ1/aniso_maxratio` (the binding 10:1 ratio cap);
+(3) re-normalized to geometric mean 1; (4) clamped again; then scaled per-tissue by σ0. The
+non-positive-definite handling is asymmetric and worth stating: a tensor with **all three eigenvalues
+≤ 0** is replaced by isotropic σ0, but a **mixed-sign** tensor (λ1>0, λ2/λ3≤0) is NOT isotropized — its
+negative eigenvalues are raised to `λ1/10`, yielding a spurious 10:1 prolate along an unreliable axis.
+On FullPD5 the DTI and MD-dMRI tensors have ~0% mixed-sign voxels in any ROI, so this branch is never
+exercised; the MD-dMRI arm additionally isotropizes its ~15% non-positive-definite ⟨D⟩ voxels upstream
+in `03` (those land in CSF/skull, not WM/GM). For the cohort, a per-arm mixed-sign rate per ROI should
+be logged so noisier or atrophied subjects do not silently take the prolate branch.
 
 ## DTI model (baseline)
 
@@ -149,7 +165,11 @@ every GM/WM element it contains, not a fixed-radius sphere.
 ## Limitations
 
 - **Resolution.** MD-dMRI is acquired at 2.5 mm; small deep nuclei (SN, STN) are near or below a
-  voxel, so partial volume biases the per-voxel tensor at exactly the PD targets of interest.
+  voxel, so partial volume biases the per-voxel tensor at exactly the PD targets of interest. This is
+  not fixable without reacquisition. The Tier-3 midbrain-nucleus ROIs (SNc/SNr/VTA/RN/STN, CIT168/Pauli)
+  therefore carry the largest per-voxel tensor uncertainty, and their E-field readouts must be read with
+  this partial-volume caveat — primary inference leans on the coarser Tier-1/2 ROIs and the cohort, with
+  the merged SN/VTA mask used for E-field-only reporting (no MRE cross-correlation at this resolution).
 - **Magnitude is discarded by `'vn'`.** Conductivity magnitude is set by literature σ0, not by the
   measured ⟨D⟩. This is deliberate (per-voxel diffusion magnitude at 2.5 mm is unreliable: within-WM
   geometric-mean CoV ≈ 46%, mostly partial volume and noise), but it means disease-related MD changes

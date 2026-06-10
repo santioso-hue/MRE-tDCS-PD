@@ -14,8 +14,12 @@ import nibabel as nib
 
 
 def load_labeled(reg_dir):
-    """Return (labeled int array, affine, {label:name}) in subject/mesh T1 space."""
-    fr = os.path.join(reg_dir, "fastsurfer_rois")
+    """Return (labeled int array, affine, {label:name}) in subject/mesh T1 space.
+    Prefers the recon-all parcellation (freesurfer_rois, cohort-definitive); falls back to the
+    FastSurfer pilot build (fastsurfer_rois) when recon-all output is not present."""
+    fr = os.path.join(reg_dir, "freesurfer_rois")
+    if not os.path.exists(os.path.join(fr, "roi_labels_meshspace.nii.gz")):
+        fr = os.path.join(reg_dir, "fastsurfer_rois")
     img = nib.load(os.path.join(fr, "roi_labels_meshspace.nii.gz"))
     with open(os.path.join(fr, "rois.json")) as f:
         names = {int(k): v for k, v in json.load(f).items()}
@@ -42,12 +46,16 @@ def _labels_on_grid(target_img, labeled, lab_affine):
     return out.reshape((nx, ny, nz))
 
 
-def sample_volume_medians(map_path, labeled, lab_affine, names):
-    """Median of a scalar map within each ROI label. Ignores 0 / non-finite voxels."""
+def sample_volume_medians(map_path, labeled, lab_affine, names, gate=None):
+    """Median of a scalar map within each ROI label. Ignores 0 / non-finite voxels.
+    Optional `gate` (bool array on the map grid) further restricts which voxels count —
+    used to drop low-confidence / CSF-adjacent MRE voxels (05_mre_efield_comparison)."""
     img = nib.load(map_path)
     d = np.asarray(img.dataobj, dtype=float)
     lab = _labels_on_grid(img, labeled, lab_affine)
     valid = np.isfinite(d) & (d != 0)
+    if gate is not None and gate.shape == d.shape:
+        valid &= gate
     out = {}
     for k, n in names.items():
         v = d[(lab == k) & valid]

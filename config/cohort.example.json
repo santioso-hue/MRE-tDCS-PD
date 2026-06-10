@@ -1,0 +1,8 @@
+{
+  "_comment": "Cohort manifest. Copy to config/cohort.json (gitignored) and fill in real subjects. group is PD or HC; age in years. work/m2m/fit are per-subject paths used by the cohort runner; results land in results/<id>/.",
+  "montages": ["M1", "DLPFC", "HD_M1", "HD_DLPFC"],
+  "subjects": [
+    {"id": "FullPD5", "group": "HC", "age": 64, "work": "/path/to/FullPD5_segmentation", "m2m": "/path/to/m2m_FullPD5", "fit": "/path/to/fit"},
+    {"id": "sub-PD01", "group": "PD", "age": 67, "work": "/path/to/sub-PD01_work", "m2m": "/path/to/m2m_sub-PD01", "fit": "/path/to/sub-PD01_fit"}
+  ]
+}

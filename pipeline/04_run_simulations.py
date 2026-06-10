@@ -1,144 +1,137 @@
 """
-04_run_simulations.py — Run the tDCS conductivity-model simulations for one subject.
+04_run_simulations.py — tDCS simulations over (montage x conductivity-model) for one subject.
 
-Models (data-driven, see MODELS below):
+Conductivity models (montage-independent; only the input tensor differs):
   ISO      — isotropic scalar conductivity (literature values)
   DTI      — anisotropic 'vn' from dwi2cond (FA-based classical baseline)
-  MD-dMRI  — anisotropic 'vn', σ ∝ ⟨D⟩ (QTI mean tensor)  ->  tensor_MD_dMRI.nii.gz
+  MD-dMRI  — anisotropic 'vn', sigma proportional to <D> (QTI mean tensor) -> tensor_MD_dMRI.nii.gz
 
-The ONLY thing that differs between the DTI and MD-dMRI models is the input tensor (QTI ⟨D⟩ vs
-single-shell DTI); the 'vn' mapping, mesh, electrodes, caps, and FEM are identical standard SimNIBS.
-Alternatives considered (free-water elimination, magnitude preservation, μFA) were rejected; see
-pipeline/conductivity_models_derivation.md.
+Montages (the electrodes change, the tensors do not). Each target gets a conventional pad and a focal
+4x1 HD version, same +2 mA total dose (HD vs pad = same dose, different focality):
+  M1        — C3 anode / Fp2 cathode, 5x5 cm pads, 2 mA  (the pilot montage)
+  DLPFC     — F3 anode / Fp2 cathode, 5x5 cm pads, 2 mA
+  HD_M1     — 4x1 ring: centre C3 (+2 mA), returns Cz/F3/T7/P3 (-0.5 mA each), ~1 cm discs
+  HD_DLPFC  — 4x1 ring: centre F3 (+2 mA), returns Fp1/Fz/C3/F7 (-0.5 mA each), ~1 cm discs
+Left M1 (C3) is fixed across all subjects to avoid montage-laterality confounding the conductivity-model
+contrast (C4 mirror optional). The small HD discs give higher per-electrode current density than the
+5x5 pads — note in methods. 4x1 ring: Datta et al. 2009 Brain Stimul 2:201; Villamar et al. 2013 (JoVE;
+J Pain 14:371).
 
-Montage: C3 (anode, left M1) → Fp2 (cathode, right supraorbital), 2 mA.
+Output dirs are namespaced: sim_<montage>_<model>/ (e.g. sim_DLPFC_MD-dMRI). analysis/04_extract_roi_efield
+reads this convention. Free-water elimination was tested and dropped (null); see the FWE archive notes.
 
-Usage (run in WORK_DIR; SimNIBS resolves subpath/pathfem relative to CWD):
-  simnibs_python pipeline/04_run_simulations.py                # all models
-  simnibs_python pipeline/04_run_simulations.py MD-dMRI        # re-run a single model only
-  simnibs_python pipeline/04_run_simulations.py ISO DTI        # a subset
-
-Requirements: m2m_<subject>/ (CHARM); dwi2cond output (DTI); tensor_MD_dMRI.nii.gz (02).
+Usage (run in WORK_DIR):
+  simnibs_python pipeline/04_run_simulations.py                              # all montages x all models
+  simnibs_python pipeline/04_run_simulations.py --montage DLPFC              # one montage, all models
+  simnibs_python pipeline/04_run_simulations.py --montage M1 --model MD-dMRI # one montage, one model
 NOTE: do NOT pass fn_tensor_nifti with tms_flex_opt/tes_flex_opt — documented SimNIBS bug.
 """
-import os
-import sys
+import os, sys, argparse
 
-# macOS Apple Silicon: prevent the OpenMP duplicate-runtime crash. MUST be set BEFORE
-# `import simnibs` triggers OpenMP initialisation. No-ops on Linux/Windows.
-os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("OMP_NUM_THREADS", "1")          # macOS Apple Silicon OpenMP guard (before simnibs)
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _config import cfg  # noqa: E402  (paths/subject from config/config.sh)
-
+from _config import cfg  # noqa: E402
 import simnibs            # noqa: E402
 import nibabel as nib     # noqa: E402
 import numpy as np        # noqa: E402
 
-WDIR      = cfg["WORK_DIR"]
-SUBPATH   = f'm2m_{cfg["SUBJECT"]}'
-TENSOR_MD = os.path.join(WDIR, "tensor_MD_dMRI.nii.gz")   # σ ∝ ⟨D⟩ (QTI mean tensor), standard 'vn'
+WDIR    = cfg["WORK_DIR"]
+SUBPATH = f'm2m_{cfg["SUBJECT"]}'
+TENSOR_MD = os.path.join(WDIR, "tensor_MD_dMRI.nii.gz")
+ANISO_MAXRATIO, ANISO_MAXCOND = 10, 2                  # SimNIBS defaults, identical for both 'vn' models
 
-# Anisotropy caps applied IDENTICALLY to every 'vn' (anisotropic) model so a DTI↔MD-dMRI E-field
-# difference reflects the tensor source, not the clip. SimNIBS has TWO separate caps:
-#   aniso_maxratio = 10 : eigenvalue RATIO cap (the BINDING one), top of the 7–10:1 ex vivo WM
-#       range (Nicholson 1965 Exp Neurol 13:386; Ranck & BeMent 1965 Exp Neurol 11:451).
-#   aniso_maxcond  = 2  : eigenvalue MAGNITUDE cap (S/m, SimNIBS default), non-binding under vn.
-ANISO_MAXRATIO = 10
-ANISO_MAXCOND  = 2
-
-# Data-driven model table. `tensor` = explicit conductivity-tensor NIfTI set on the SESSION;
-# None → ISO (scalar) or DTI ('vn' uses the dwi2cond tensor SimNIBS finds inside m2m).
-MODELS = [
-    {"name": "ISO",     "pathfem": "sim_ISO",     "anisotropy": "scalar", "tensor": None},
-    {"name": "DTI",     "pathfem": "sim_DTI",     "anisotropy": "vn",     "tensor": None},
-    {"name": "MD-dMRI", "pathfem": "sim_MD_dMRI", "anisotropy": "vn",     "tensor": TENSOR_MD},
-]
+MODELS = {                                             # name -> (anisotropy_type, tensor or None)
+    "ISO":     ("scalar", None),
+    "DTI":     ("vn",     None),                       # dwi2cond tensor found inside m2m
+    "MD-dMRI": ("vn",     TENSOR_MD),                  # sigma proportional to <D>
+}
 
 
-def make_electrode_pair(tdcs):
-    """C3 anode, Fp2 cathode — 5×5 cm rectangular pads."""
-    for channel, centre in ((1, "C3"), (2, "Fp2")):
-        e = tdcs.add_electrode()
-        e.channelnr  = channel
-        e.centre     = centre
-        e.shape      = "rect"
-        e.dimensions = [50, 50]
-        e.thickness  = 4
-    return tdcs
+def pad(centre, channelnr):
+    return dict(centre=centre, channelnr=channelnr, shape="rect", dimensions=[50, 50], thickness=4)
+
+
+def disc(centre, channelnr):
+    return dict(centre=centre, channelnr=channelnr, shape="ellipse", dimensions=[10, 10], thickness=4)
+
+
+# 4x1 HD: centre carries the full +2 mA, four returns -0.5 mA each (sum to zero, Kirchhoff).
+HD = [0.002, -0.0005, -0.0005, -0.0005, -0.0005]
+MONTAGES = {
+    "M1":       dict(currents=[0.002, -0.002], electrodes=[pad("C3", 1), pad("Fp2", 2)]),
+    "DLPFC":    dict(currents=[0.002, -0.002], electrodes=[pad("F3", 1), pad("Fp2", 2)]),
+    "HD_M1":    dict(currents=HD, electrodes=[disc("C3", 1), disc("Cz", 2), disc("F3", 3),
+                                              disc("T7", 4), disc("P3", 5)]),
+    "HD_DLPFC": dict(currents=HD, electrodes=[disc("F3", 1), disc("Fp1", 2), disc("Fz", 3),
+                                              disc("C3", 4), disc("F7", 5)]),
+}
 
 
 def validate_tensor(path):
-    """Assert the conductivity tensor is T1-space, [X,Y,Z,6] FSL order. Aborts on mismatch."""
-    t  = nib.load(path)
-    t1 = nib.load(os.path.join(SUBPATH, "T1.nii.gz"))
-    assert t.shape[:3] == t1.shape[:3], f"Tensor shape {t.shape[:3]} ≠ T1 {t1.shape[:3]} (wrong space)"
-    assert t.shape[3] == 6, f"Tensor 4th dim {t.shape[3]} ≠ 6 (FSL dtifit order)"
-    assert np.allclose(t.affine, t1.affine, atol=1e-3), "Tensor affine ≠ T1 — tensor in wrong space!"
-    print(f"  tensor validation: shape={t.shape} ✓  affine matches T1 ✓")
+    t, t1 = nib.load(path), nib.load(os.path.join(SUBPATH, "T1.nii.gz"))
+    assert t.shape[:3] == t1.shape[:3], f"Tensor shape {t.shape[:3]} != T1 {t1.shape[:3]} (wrong space)"
+    assert t.shape[3] == 6, f"Tensor 4th dim {t.shape[3]} != 6 (FSL order)"
+    assert np.allclose(t.affine, t1.affine, atol=1e-3), "Tensor affine != T1 — wrong space!"
 
 
-def run_model(m):
-    """Build and run one SESSION for model dict `m`. Returns None on success, else the exception."""
-    print("=" * 60); print(f"MODEL: {m['name']}  ->  {m['pathfem']}"); print("=" * 60)
-    s = simnibs.sim_struct.SESSION()
-    s.subpath = SUBPATH
-    s.pathfem = m["pathfem"]
-    if m["tensor"] is not None:
-        if not os.path.exists(m["tensor"]):
-            return FileNotFoundError(f"{m['tensor']} not found — run 03_build_conductivity_tensor.py")
-        validate_tensor(m["tensor"])
-        # CRITICAL: set fname_tensor on the SESSION, NOT fn_tensor_nifti on the TDCSLIST.
-        # SESSION._prepare() unconditionally overwrites PL.fn_tensor_nifti = self.fname_tensor
-        # (sim_struct.py ~line 209), so a TDCSLIST attribute is silently ignored.
-        s.fname_tensor = m["tensor"]
+def run(montage_name, model_name):
+    mont = MONTAGES[montage_name]
+    aniso, tensor = MODELS[model_name]
+    pathfem = f"sim_{montage_name}_{model_name.replace('-', '_')}"   # token matches 04_extract lookup
+    print("=" * 60); print(f"MONTAGE {montage_name}  x  MODEL {model_name}  ->  {pathfem}"); print("=" * 60)
+    s = simnibs.sim_struct.SESSION(); s.subpath = SUBPATH; s.pathfem = pathfem
+    if tensor is not None:
+        if not os.path.exists(tensor):
+            return FileNotFoundError(f"{tensor} not found — run 03_build_conductivity_tensor.py")
+        validate_tensor(tensor)
+        s.fname_tensor = tensor                        # on the SESSION, not the TDCSLIST (overwrite trap)
     tdcs = s.add_tdcslist()
-    tdcs.currents        = [0.002, -0.002]        # 2 mA
-    tdcs.anisotropy_type = m["anisotropy"]
-    if m["anisotropy"] == "vn":
-        tdcs.aniso_maxratio = ANISO_MAXRATIO
-        tdcs.aniso_maxcond  = ANISO_MAXCOND
-    make_electrode_pair(tdcs)
+    tdcs.currents = mont["currents"]
+    tdcs.anisotropy_type = aniso
+    if aniso == "vn":
+        tdcs.aniso_maxratio, tdcs.aniso_maxcond = ANISO_MAXRATIO, ANISO_MAXCOND
+    for spec in mont["electrodes"]:
+        e = tdcs.add_electrode()
+        e.channelnr, e.centre = spec["channelnr"], spec["centre"]
+        e.shape, e.dimensions, e.thickness = spec["shape"], spec["dimensions"], spec["thickness"]
     try:
-        simnibs.run_simnibs(s)
-        print(f"{m['name']} complete -> {m['pathfem']}/\n")
-        return None
-    except Exception as e:                          # noqa: BLE001 — report and continue other models
-        print(f"ERROR in {m['name']}: {e}\n")
-        return e
+        simnibs.run_simnibs(s); print(f"{montage_name}/{model_name} complete\n"); return None
+    except Exception as e:                             # noqa: BLE001
+        print(f"ERROR {montage_name}/{model_name}: {e}\n"); return e
 
 
 def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--montage", nargs="*", default=None, help="montage(s); default = all")
+    ap.add_argument("--model", nargs="*", default=None, dest="models", help="model(s); default = all")
+    args = ap.parse_args()
+
     if not os.path.isdir(os.path.join(WDIR, SUBPATH)):
         raise FileNotFoundError(f"Head model not found: {SUBPATH} — run CHARM first.")
-    os.chdir(WDIR)                                   # SimNIBS resolves subpath/pathfem relative to CWD
-    print(f"Working directory: {os.getcwd()}")
+    os.chdir(WDIR)
 
-    # Optional CLI subset (e.g. "MD-dMRI" to re-run one model); default = all models.
-    by_name   = {m["name"]: m for m in MODELS}
-    requested = sys.argv[1:] or list(by_name)
-    unknown   = [r for r in requested if r not in by_name]
-    if unknown:
-        raise SystemExit(f"Unknown model(s) {unknown}. Choose from: {', '.join(by_name)}")
-    to_run = [by_name[r] for r in requested]
-    print(f"Running {len(to_run)} model(s): {', '.join(requested)}")
+    montages = args.montage or list(MONTAGES)
+    models = args.models or list(MODELS)
+    for bad, pool in ((set(montages) - set(MONTAGES), "montages"), (set(models) - set(MODELS), "models")):
+        if bad:
+            raise SystemExit(f"Unknown {pool}: {bad}. Choose from {list(MONTAGES if pool=='montages' else MODELS)}")
 
-    errors = {m["name"]: err for m in to_run if (err := run_model(m)) is not None}
+    errors = {}
+    for mont in montages:
+        for model in models:
+            err = run(mont, model)
+            if err is not None:
+                errors[f"{mont}/{model}"] = err
 
     print("=" * 60)
-    done = [m["name"] for m in to_run if m["name"] not in errors]
-    if done:
-        print(f"Completed ({len(done)}/{len(to_run)}): {', '.join(done)}")
-        for m in to_run:
-            if m["name"] in done:
-                print(f"  {WDIR}/{m['pathfem']}/")
     if errors:
-        print(f"\nFailed ({len(errors)}/{len(to_run)}):")
-        for name, exc in errors.items():
-            print(f"  {name}: {exc}")
-        sys.exit(1)                                  # signal failure to the shell after running all
-    print("\nAll requested simulations complete.\nNext: analysis/04_extract_roi_efield.py")
+        print(f"Failed ({len(errors)}):")
+        for k, e in errors.items():
+            print(f"  {k}: {e}")
+        sys.exit(1)
+    print("All requested simulations complete.\nNext: analysis/04_extract_roi_efield.py --montage <name>")
 
 
 if __name__ == "__main__":
