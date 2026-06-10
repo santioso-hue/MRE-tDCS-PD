@@ -6,7 +6,7 @@ helper, which sources the file in a subshell so ${VAR} expansions resolve exactl
 as bash would.
 
     from _config import cfg
-    cfg["WORK_DIR"], cfg["SUBJECT"], cfg["DPS_MAT"], ...
+    cfg["WORK_DIR"], cfg["SUBJECT"], cfg["QTI_DPS"], ...
 """
 import os
 import subprocess
@@ -22,7 +22,7 @@ def load_config(path=_CONFIG_SH):
             "and edit it for your machine."
         )
     keys = ("SUBJECT DATA_DIR WORK_DIR NII_DIR FIT_DIR M2M_DIR REG_DIR "
-            "DWI_NII DWI_BVAL DWI_BVEC STE_B0_NII DPS_MAT SIMNIBS_BIN FSLDIR "
+            "DWI_NII DWI_BVAL DWI_BVEC STE_B0_NII QTI_MFS QTI_DPS SIMNIBS_BIN FSLDIR "
             "MRE_STIFFNESS MRE_STORAGE MRE_LOSS MRE_CONFIDENCE").split()
     script = f'set -a; source "{path}"; ' + "; ".join(f'echo "${k}"' for k in keys)
     out = subprocess.check_output(["bash", "-c", script], text=True).splitlines()

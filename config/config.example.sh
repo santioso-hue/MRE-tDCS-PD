@@ -27,7 +27,9 @@ DWI_NII="${NII_DIR}/dti.nii.gz"           # single-shell DTI (for dwi2cond)
 DWI_BVAL="${NII_DIR}/dti.bval"
 DWI_BVEC="${NII_DIR}/dti.bvec"
 STE_B0_NII="${NII_DIR}/dmri_spherical.nii.gz"  # spherical-encoding series; vol 0 = b0 used for dMRI->T1
-DPS_MAT="${FIT_DIR}/dps.mat"              # QTI tensor-distribution fit output
+# MD-dMRI (QTI) covariance fit, produced by pipeline/run_qti_cov.m (md-dmri toolbox; run in MATLAB first).
+QTI_MFS="${FIT_DIR}/qti_cov/cov_mfs.mat"  # model fit: oriented mean tensor <D> = m(:,:,:,2:7)
+QTI_DPS="${FIT_DIR}/qti_cov/cov_dps.mat"  # derived params: MD, uFA, principal eigenvector u
 
 # Tool locations.
 SIMNIBS_BIN="${HOME}/Applications/SimNIBS-4.6/bin"

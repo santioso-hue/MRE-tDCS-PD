@@ -16,11 +16,11 @@ field across three conductivity models:
 |-------|---------------------|
 | ISO | Scalar literature conductivities (no anisotropy) |
 | DTI | Diffusion tensor from single-shell DTI (`dwi2cond`) |
-| MD-dMRI | Mean diffusion tensor ⟨D⟩ from QTI |
+| MD-dMRI | QTI covariance mean tensor ⟨D⟩ (`dtd_covariance`) |
 
 The conductivity mapping (σ ∝ D, volume-normalised; SimNIBS `'vn'`) and everything downstream are
 identical across the two anisotropic models; they differ only in the input diffusion tensor, which
-makes ISO / DTI / MD-dMRI a controlled comparison. The QTI mean tensor ⟨D⟩ is a less
+makes ISO / DTI / MD-dMRI a controlled comparison. The QTI covariance mean tensor ⟨D⟩ is a less
 kurtosis-biased estimate of the same macroscopic tensor than the single-shell DTI tensor. See
 [pipeline/conductivity_models_derivation.md](pipeline/conductivity_models_derivation.md) for the
 theory, the mapping, and limitations.
@@ -51,6 +51,7 @@ Scripts run in order; each reads its paths from the config.
 ```bash
 bash           pipeline/00_charm.sh "$SUBJECT" T1.nii T2.nii "$WORK_DIR"  # FEM head model
 bash           pipeline/01_dwi2cond.sh                                     # DTI baseline tensor (dwi2cond)
+FIT_DIR=$FIT_DIR MDDMRI_DIR=/path/to/md-dmri matlab -batch "run('pipeline/run_qti_cov.m')"  # QTI covariance fit <D>
 bash           pipeline/02_register_dmri_to_T1.sh                          # QTI <D> -> T1 (mesh) space
 simnibs_python pipeline/03_build_conductivity_tensor.py                    # MD-dMRI tensor (sigma ~ <D>)
 simnibs_python pipeline/04_run_simulations.py                             # ISO + DTI + MD-dMRI FEM
@@ -70,9 +71,9 @@ bash           pipeline/05_register_mre_to_T1.sh # MRE maps -> T1 (post-hoc)
 
 ```
 config/    config.example.sh (template), charm_highquality.ini
-pipeline/  00_charm, 01_dwi2cond, 02_register_dmri_to_T1, 03_build_conductivity_tensor,
-           04_run_simulations, 05_register_mre_to_T1, prepare_dmri_tensor.py (called by 02),
-           _config.py, conductivity_models_derivation.md (methods)
+pipeline/  00_charm, 01_dwi2cond, run_qti_cov.m (QTI covariance fit, MATLAB), 02_register_dmri_to_T1,
+           03_build_conductivity_tensor, 04_run_simulations, 05_register_mre_to_T1,
+           prepare_dmri_tensor.py (called by 02), _config.py, conductivity_models_derivation.md (methods)
 analysis/  build_rois, extract_roi_efield, mre_efield_comparison, compare_sims, qc_harness
 docs/      references
 tests/     mean-tensor reconstruction + QC-harness checks
