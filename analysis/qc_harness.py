@@ -54,6 +54,13 @@ def _data(p):
     return np.asarray(img.dataobj) if img is not None else None
 
 
+def _roi_dir(reg):
+    """Tier-1 ROI dir: recon-all parcellation (freesurfer_rois) if built, else the FastSurfer
+    pilot build (fastsurfer_rois). Mirrors analysis/_rois.load_labeled so QC reads the same masks."""
+    fr = os.path.join(reg, "freesurfer_rois")
+    return fr if os.path.exists(os.path.join(fr, "roi_labels_meshspace.nii.gz")) else os.path.join(reg, "fastsurfer_rois")
+
+
 def _eigs_masked(t, sel):
     """Ascending eigenvalues (N,3) of the 6-comp tensor `t`, built ONLY over the selected voxels.
     Indexing t before assembling the matrices avoids a full-volume (X,Y,Z,3,3) ~740 MB allocation."""
@@ -310,7 +317,7 @@ def qc_sims(P):
 def qc_rois(P):
     m, f = {}, []
     n_empty = 0; n_total = 0
-    for p in glob.glob(os.path.join(P["reg"], "fastsurfer_rois", "roi_*.nii.gz")):
+    for p in glob.glob(os.path.join(_roi_dir(P["reg"]), "roi_*.nii.gz")):
         n_total += 1
         if (_data(p) > 0).sum() == 0:
             n_empty += 1; f.append(f"rois:empty({os.path.basename(p)})")
@@ -320,8 +327,47 @@ def qc_rois(P):
     return m, f
 
 
+def qc_tier3(P):
+    # Tier-3 midbrain nuclei (CIT168/Pauli) are OVERLAP-ALLOWED, E-field-only, sampled as separate
+    # binary masks (07_build_tier3_nuclei.sh). Glob the per-nucleus masks directly; do NOT read
+    # tier3_labeled.nii.gz (winner-take-all int labels destroy the intended overlap). Flag empties;
+    # log pairwise overlap as an expected metric, not an error.
+    m, f = {}, []
+    t3 = os.path.join(P["reg"], "atlas_rois", "tier3")
+    paths = sorted(glob.glob(os.path.join(t3, "roi_*.nii.gz")))
+    paths = [p for p in paths if os.path.basename(p) != "tier3_labeled.nii.gz"]
+    masks = {}
+    for p in paths:
+        d = _data(p)
+        if d is None:
+            continue
+        b = d > 0
+        masks[os.path.basename(p)] = b
+        if b.sum() == 0:
+            f.append(f"tier3:empty({os.path.basename(p)})")
+    m["tier3_n_total"] = len(masks)
+    m["tier3_n_empty"] = sum(1 for b in masks.values() if b.sum() == 0)
+    names = sorted(masks)
+    n_ov = 0
+    for i in range(len(names)):
+        for j in range(i + 1, len(names)):
+            if (masks[names[i]] & masks[names[j]]).any():
+                n_ov += 1
+    m["tier3_n_overlap_pairs"] = n_ov   # expected (overlap-allowed), reported not flagged
+    if paths and not masks:
+        f.append("tier3:unreadable")
+    # presence: each nucleus should have an L and R mask (07 emits roi_{L,R}_{nucleus}.nii.gz)
+    if masks:
+        for nuc in NUCLEI:
+            for side in ("L", "R"):
+                if f"roi_{side}_{nuc}.nii.gz" not in masks:
+                    f.append(f"tier3:missing(roi_{side}_{nuc})")
+    return m, f
+
+
 STAGES = [("00_charm", qc_charm), ("01_dwi2cond", qc_dwi2cond), ("02_register", qc_register),
-          ("03_conductivity", qc_conductivity), ("04_sims", qc_sims), ("05_rois", qc_rois)]
+          ("03_conductivity", qc_conductivity), ("04_sims", qc_sims), ("05_rois", qc_rois),
+          ("06_tier3", qc_tier3)]
 
 
 def resolve_subjects(args):
@@ -330,7 +376,7 @@ def resolve_subjects(args):
     return [{"id": cfg["SUBJECT"], "work": cfg["WORK_DIR"], "m2m": cfg["M2M_DIR"],
              "reg": cfg["REG_DIR"],
              "samseg": os.path.join(cfg["M2M_DIR"], "segmentation", "labeling.nii.gz"),
-             "cc_mask": os.path.join(cfg["REG_DIR"], "fastsurfer_rois", "roi_CC.nii.gz")}]
+             "cc_mask": os.path.join(_roi_dir(cfg["REG_DIR"]), "roi_CC.nii.gz")}]
 
 
 # [PROV] / directional metrics -> which tail to guard once a cohort exists ("low" = flag below the
@@ -379,7 +425,7 @@ def main():
     for P in subjects:
         P.setdefault("reg", os.path.join(P["work"], "registration"))
         P.setdefault("samseg", os.path.join(P["m2m"], "segmentation", "labeling.nii.gz"))
-        P.setdefault("cc_mask", os.path.join(P["reg"], "fastsurfer_rois", "roi_CC.nii.gz"))
+        P.setdefault("cc_mask", os.path.join(_roi_dir(P["reg"]), "roi_CC.nii.gz"))
         row = {"subject": P["id"]}; flags_by_stage = {}
         for stage_name, fn in STAGES:
             try:
@@ -443,7 +489,7 @@ def _overlay_png(P, png_dir):
     t1 = _data(os.path.join(P["m2m"], "T1.nii.gz"))
     if t1 is None:
         return
-    lab = _data(os.path.join(P["reg"], "fastsurfer_rois", "roi_labels_meshspace.nii.gz"))  # FastSurfer ROI labels
+    lab = _data(os.path.join(_roi_dir(P["reg"]), "roi_labels_meshspace.nii.gz"))  # recon-all (or FastSurfer fallback) ROI labels
     # center the three slices on the ROI-label centroid so small ROIs (CC, mesencephalon) are in-plane
     if lab is not None and (lab > 0).any():
         ci, cj, ck = (int(round(c)) for c in np.array(np.where(lab > 0)).mean(axis=1))

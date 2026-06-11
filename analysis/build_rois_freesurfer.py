@@ -12,15 +12,16 @@ Two things this does that the FastSurfer builder does not:
 The recon-all aparc+aseg also resolves the SimNIBS atlas2subject right-hemisphere bug (state.md).
 
 Inputs (SUBJECTS_DIR/<subj>/mri/): aparc+aseg.mgz (or aparc.DKTatlas+aseg.mgz), wmparc.mgz,
-brainstemSsLabels.v13.mgz, orig.mgz. Output: registration/freesurfer_rois/{roi_labels_meshspace.nii.gz,
+brainstemSsLabels*.mgz, orig.mgz. Output: registration/freesurfer_rois/{roi_labels_meshspace.nii.gz,
 rois.json, roi_*.nii.gz}, the same format _rois.py / 04 / 05 consume (they prefer freesurfer_rois).
 
-Subcortical nuclei for the MRE cross-comparison come SEPARATELY from CIT168/Pauli via ANTs
-(analysis/07_build_tier3_nuclei.sh, item E) and merge into this label volume; see CIT168_NUCLEI below.
+The fine midbrain nuclei (SNc/SNr/VTA/RN/STN) are NOT built here: the tier-3 nuclei live in
+registration/atlas_rois/tier3/ (built by analysis/07_build_tier3_nuclei.sh, sampled separately as
+overlap-allowed binary masks, E-field-only) and are never routed through this int-label volume.
 
 Usage (cluster):  simnibs_python analysis/build_rois_freesurfer.py --fs_dir $SUBJECTS_DIR/<subj>
 """
-import os, sys, json, argparse, subprocess, tempfile
+import os, sys, json, glob, argparse, subprocess, tempfile
 import numpy as np
 import nibabel as nib
 
@@ -41,18 +42,11 @@ def wm_labels(idxs):
 BRAINSTEM_SS = {173: (55, "Mesencephalon"), 174: (56, "Pons")}
 ASEG_NO_BS = {k: v for k, v in ASEG.items() if k != 16}
 
-# CIT168 / Pauli 2018 nuclei kept SEPARATE for MRE cross-comparison (item E). Warped to subject space by
-# ANTs in 07_build_tier3_nuclei.sh; ids 60+. NOTE: the integer keys are the CIT168 atlas-volume indices
-# and MUST be confirmed against the specific CIT168 release 07 uses before the cohort run.
-CIT168_NUCLEI = {
-    "Put": 60, "Cau": 61, "NAC": 62, "GPe": 63, "GPi": 64,
-    "SNc": 65, "SNr": 66, "RN": 67, "VTA": 68,
-}
-
-
 def assemble_labels(aparc_aseg, wmparc, brainstem_ss):
     """Pure: build one integer ROI-label volume (+ {id:name}) from three recon-all label volumes,
-    all on the same grid. No I/O. CIT168 nuclei are merged later (after the ANTs warp)."""
+    all on the same grid. No I/O. The tier-3 midbrain nuclei (SNc/SNr/VTA/RN/STN) are NOT merged
+    here: they live in registration/atlas_rois/tier3/ (built by 07), sampled separately as
+    overlap-allowed binary masks, E-field-only."""
     assert aparc_aseg.shape == wmparc.shape == brainstem_ss.shape, "recon-all label grids differ"
     out = np.zeros(aparc_aseg.shape, np.int16)
     names = {}
@@ -77,8 +71,29 @@ def _load(mri, *cands):
     for c in cands:
         p = os.path.join(mri, c)
         if os.path.exists(p):
-            return np.asarray(nib.load(p).dataobj).astype(np.int32), nib.load(p)
+            return np.asarray(nib.load(p).dataobj).astype(np.int32), nib.load(p), c
     raise FileNotFoundError(f"none of {cands} in {mri}")
+
+
+def _load_brainstem(mri):
+    """Version-agnostic brainstemSsLabels loader. The Iglesias FS suffix (v13/v12/v2/v10) varies by
+    FreeSurfer version, so glob instead of hardcoding it. The full-grid *.FSvoxelSpace.mgz is on the
+    conformed grid (passes the same-grid assert); the bare *.mgz is cropped to a brainstem bounding box
+    and must NOT be used."""
+    fs = sorted(glob.glob(os.path.join(mri, "brainstemSsLabels*FSvoxelSpace.mgz")))
+    if fs:
+        p = fs[-1]
+    else:
+        # fall back to any brainstemSsLabels*.mgz that is NOT the cropped bare file
+        cands = sorted(g for g in glob.glob(os.path.join(mri, "brainstemSsLabels*.mgz"))
+                       if os.path.basename(g) != "brainstemSsLabels.mgz")
+        if not cands:
+            found = sorted(glob.glob(os.path.join(mri, "brainstemSsLabels*")))
+            raise FileNotFoundError(
+                f"no usable brainstemSsLabels*FSvoxelSpace.mgz in {mri}; "
+                f"found brainstemSsLabels*: {[os.path.basename(g) for g in found]}")
+        p = cands[-1]
+    return np.asarray(nib.load(p).dataobj).astype(np.int32), nib.load(p), os.path.basename(p)
 
 
 def main():
@@ -87,29 +102,57 @@ def main():
     ap.add_argument("--outdir", default=os.path.join(cfg["REG_DIR"], "freesurfer_rois"))
     args = ap.parse_args()
     mri = os.path.join(args.fs_dir, "mri")
-    aparc, ref = _load(mri, "aparc+aseg.mgz", "aparc.DKTatlas+aseg.mgz")
-    wmparc, _ = _load(mri, "wmparc.mgz")
-    bs, _ = _load(mri, "brainstemSsLabels.v13.mgz", "brainstemSsLabels.v12.mgz", "brainstemSsLabels.mgz")
+    aparc, ref, aparc_f = _load(mri, "aparc+aseg.mgz", "aparc.DKTatlas+aseg.mgz")
+    wmparc, _, _ = _load(mri, "wmparc.mgz")
+    bs, _, bs_f = _load_brainstem(mri)
+    print(f"aparc used: {aparc_f}    brainstem used: {bs_f}")
     labels, names = assemble_labels(aparc, wmparc, bs)
     os.makedirs(args.outdir, exist_ok=True)
 
     fsl, charm_t1 = cfg["FSLDIR"], os.path.join(cfg["M2M_DIR"], "T1.nii.gz")
-    flirt = os.path.join(fsl, "share", "fsl", "bin", "flirt")
+    flirt = os.path.join(fsl, "bin", "flirt")
     env = dict(os.environ, FSLDIR=fsl, FSLOUTPUTTYPE="NIFTI_GZ")
+    roi_charm = os.path.join(args.outdir, "roi_labels_meshspace.nii.gz")
     with tempfile.TemporaryDirectory() as td:
         lab_nii = os.path.join(td, "labels_fs.nii.gz")
         nib.save(nib.Nifti1Image(labels, ref.affine, ref.header), lab_nii)
         orig_nii = os.path.join(td, "orig.nii.gz")
         nib.save(nib.load(os.path.join(mri, "orig.mgz")), orig_nii)
         mat = os.path.join(td, "fs2charm.mat")
+        print("Registering recon-all orig -> charm T1 (FLIRT 6-DOF rigid)...")
         subprocess.run([flirt, "-in", orig_nii, "-ref", charm_t1, "-omat", mat,
-                        "-dof", "6", "-cost", "mutualinfo"], check=True, env=env)
-        roi_charm = os.path.join(args.outdir, "roi_labels_meshspace.nii.gz")
+                        "-out", os.path.join(td, "orig_in_charm.nii.gz"),
+                        "-dof", "6", "-cost", "mutualinfo",
+                        "-searchrx", "-20", "20", "-searchry", "-20", "20",
+                        "-searchrz", "-20", "20", "-interp", "trilinear"], check=True, env=env)
         subprocess.run([flirt, "-in", lab_nii, "-ref", charm_t1, "-applyxfm", "-init", mat,
                         "-interp", "nearestneighbour", "-out", roi_charm], check=True, env=env)
+
+    # --- split into binary masks in mesh space + write rois.json ---
+    lab = np.asarray(nib.load(roi_charm).dataobj).astype(np.int16)
+    aff = nib.load(charm_t1).affine
+    hdr = nib.load(charm_t1).header
+
+    def save(mask, fn):
+        nib.save(nib.Nifti1Image(mask.astype(np.uint8), aff, hdr), os.path.join(args.outdir, fn))
+        return int(mask.sum())
+
+    print(f"\n{'ROI (mesh space)':22s}{'voxels':>10s}")
+    for rid, nm in sorted(names.items()):
+        print(f"{nm:22s}{save(lab == rid, f'roi_{nm}.nii.gz'):10d}")
     json.dump({int(k): v for k, v in names.items()},
               open(os.path.join(args.outdir, "rois.json"), "w"), indent=0)
-    print(f"Wrote {len(names)} ROIs -> {args.outdir} (then merge CIT168 nuclei from 07).")
+
+    # registration QC: overlap of warped labels with charm GM+WM tissues
+    ft = os.path.join(cfg["M2M_DIR"], "final_tissues.nii.gz")
+    if os.path.exists(ft):
+        seg_ch = nib.load(ft).get_fdata()
+        seg_ch = seg_ch[..., 0] if seg_ch.ndim == 4 else seg_ch
+        warped, charm_gmwm = lab > 0, np.isin(seg_ch, [1, 2])
+        dice = 2 * (warped & charm_gmwm).sum() / (warped.sum() + charm_gmwm.sum())
+        print(f"\nReg QC: Dice(recon-all brain, charm GM+WM) = {dice:.3f}  (expect > ~0.85)")
+    print(f"\nWrote {len(names)} ROIs + roi_labels_meshspace.nii.gz + rois.json -> {args.outdir} "
+          f"(tier-3 nuclei built separately by 07).")
 
 
 if __name__ == "__main__":

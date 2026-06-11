@@ -31,6 +31,8 @@ from scipy import stats
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MODELS = ["ISO", "DTI", "MD-dMRI"]
+WHOLE_BRAIN = "WholeBrain"   # aggregate row; excluded from per-family FDR so it does not inflate m
+MIN_PAIRS = 6                # minimum finite paired observations to run a Wilcoxon test
 
 
 def bh_fdr(pvals):
@@ -81,8 +83,9 @@ def partial_pearson(x, y, covar):
 
 
 def rank_biserial_paired(a, b):
-    """Matched-pairs rank-biserial effect size for a-b (excludes zero differences)."""
+    """Matched-pairs rank-biserial effect size for a-b (drops non-finite and zero differences)."""
     d = np.asarray(a, float) - np.asarray(b, float)
+    d = d[np.isfinite(d)]
     d = d[d != 0]
     if d.size == 0:
         return 0.0
@@ -106,7 +109,14 @@ def load_matrix(subjects, results_dir, montage, stat):
         if rois is None:
             rois = names
         elif names != rois:
-            raise ValueError(f"ROI set for {s['id']}/{montage} differs from the first subject")
+            # order matters for the matrix, so still compare as lists; but report the
+            # set-diff so the operator sees WHY (e.g. {'Brainstem'} vs {'Mesencephalon','Pons'}).
+            extra = set(names) - set(rois)
+            missing = set(rois) - set(names)
+            raise ValueError(
+                f"ROI set for {s['id']}/{montage} differs from the first subject: "
+                f"extra={extra or '{}'} missing={missing or '{}'} "
+                f"(or same ROIs in a different order)")
         for m in MODELS:
             per_subj[m].append([float(rows[r][f"{m}_{stat}"]) for r in rois])
     return rois, {m: np.asarray(v, float) for m, v in per_subj.items()}
@@ -133,24 +143,31 @@ def main():
         rows = []
         for j, roi in enumerate(rois):
             v = md[:, j]
-            # H1 paired (every subject as own control)
+            # H1 paired (every subject as own control); NaN-safe over finite pairs only
             h1 = {}
             for ref in ("DTI", "ISO"):
                 a, b = md[:, j], mats[ref][:, j]
+                m = np.isfinite(a) & np.isfinite(b)
+                if m.sum() < MIN_PAIRS:
+                    print(f"  [{montage}] {roi}: H1 MD-vs-{ref} skipped, "
+                          f"only {int(m.sum())} finite pairs (< {MIN_PAIRS})")
+                    h1[ref] = (np.nan, np.nan)
+                    continue
                 try:
-                    _, p = stats.wilcoxon(a, b)
+                    _, p = stats.wilcoxon(a[m], b[m])
                 except ValueError:
                     p = np.nan
-                h1[ref] = (p, rank_biserial_paired(a, b))
-            # H3 PD vs HC on age-adjusted residuals
+                h1[ref] = (p, rank_biserial_paired(a[m], b[m]))
+            # H3 PD vs HC on age-adjusted residuals; over finite residuals only
             resid = residualize(v, age)
             rp, rh = resid[group == 1], resid[group == 0]
-            if n_pd >= 1 and n_hc >= 1 and len(set(v)) > 1:
+            rp, rh = rp[np.isfinite(rp)], rh[np.isfinite(rh)]
+            if rp.size >= 1 and rh.size >= 1 and len(set(v)) > 1:
                 try:
                     _, p_h3 = stats.mannwhitneyu(rp, rh, alternative="two-sided")
                 except ValueError:
                     p_h3 = np.nan
-                d_h3 = cohens_d(rp, rh)
+                d_h3 = cohens_d(rp, rh) if rp.size >= 2 and rh.size >= 2 else np.nan
             else:
                 p_h3, d_h3 = np.nan, np.nan
             # Age, controlling for group
@@ -160,11 +177,15 @@ def main():
                              p_h1_dti=h1["DTI"][0], es_h1_dti=h1["DTI"][1],
                              p_h1_iso=h1["ISO"][0], es_h1_iso=h1["ISO"][1],
                              p_h3=p_h3, d_h3=d_h3, r_age=r_age, p_age=p_age))
-        # FDR-BH per family across ROIs
-        q_h1_dti = bh_fdr([r["p_h1_dti"] for r in rows])
-        q_h1_iso = bh_fdr([r["p_h1_iso"] for r in rows])
-        q_h3 = bh_fdr([r["p_h3"] for r in rows])
-        q_age = bh_fdr([r["p_age"] for r in rows])
+        # FDR-BH per (montage, family) across ROIs. Exclude the WholeBrain aggregate row
+        # from each correction so it does not inflate m; it gets a NaN q (bh_fdr passes NaN).
+        def fdr_no_wholebrain(key):
+            ps = [(r[key] if r["roi"] != WHOLE_BRAIN else np.nan) for r in rows]
+            return bh_fdr(ps)
+        q_h1_dti = fdr_no_wholebrain("p_h1_dti")
+        q_h1_iso = fdr_no_wholebrain("p_h1_iso")
+        q_h3 = fdr_no_wholebrain("p_h3")
+        q_age = fdr_no_wholebrain("p_age")
         for i, r in enumerate(rows):
             r.update(q_h1_dti=q_h1_dti[i], q_h1_iso=q_h1_iso[i], q_h3=q_h3[i], q_age=q_age[i])
 

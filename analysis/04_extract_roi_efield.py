@@ -18,8 +18,9 @@ Sim meshes are looked up as sim_<montage>_<token> (the montage-aware convention 
 falling back to the legacy sim_<token> (= M1). Run per montage:
   ~/Applications/SimNIBS-4.6/bin/simnibs_python analysis/04_extract_roi_efield.py [--montage M1|DLPFC|...]
 """
-import os, sys, csv, argparse
+import os, sys, csv, argparse, glob
 import numpy as np
+import nibabel as nib
 from simnibs import mesh_io
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -34,6 +35,41 @@ WHOLE_BRAIN = "WholeBrain"
 # model -> (sim-dir token, mesh-field suffix)
 MODEL_TOKENS = {"ISO": ("ISO", "scalar"), "DTI": ("DTI", "vn"), "MD-dMRI": ("MD_dMRI", "vn")}
 MODELS = list(MODEL_TOKENS)
+# Tier-3 midbrain nuclei: overlap-allowed, E-field-only, sampled as SEPARATE binary masks
+# (never an int-label / winner-take-all volume). Cluster build output; absent on dev machines.
+TIER3_DIR = os.path.join(REG, "atlas_rois", "tier3")
+TIER3_NUCLEI = ("SNc", "SNr", "VTA", "RN", "STN")
+TIER3_SIDES = ("L", "R")
+
+
+def load_tier3_masks(tier3_dir):
+    """Glob the tier-3 nucleus masks as INDEPENDENT binary volumes (overlap allowed).
+    Each entry is (name, bool array, own affine). Returns [] if the dir is absent."""
+    out = []
+    for side in TIER3_SIDES:
+        for nuc in TIER3_NUCLEI:
+            p = os.path.join(tier3_dir, f"roi_{side}_{nuc}.nii.gz")
+            for f in sorted(glob.glob(p)):
+                img = nib.load(f)
+                out.append((f"{nuc}_{side}", np.asarray(img.dataobj) > 0, img.affine))
+    return out
+
+
+def mask_select(bary_world, mask, mask_affine):
+    """Map FEM element barycentres (N x 3, world mm) to a single binary mask -> bool (N).
+    Same voxel-index math as _rois.assign_mesh_labels, but tests one mask (no winner-take-all)."""
+    inv = np.linalg.inv(mask_affine)
+    b = np.ascontiguousarray(bary_world, dtype=np.float64)
+    with np.errstate(all="ignore"):
+        vox = inv[:3, :3] @ b.T + inv[:3, 3:4]
+    vi = np.round(vox).astype(int)
+    ok = ((vi[0] >= 0) & (vi[0] < mask.shape[0]) &
+          (vi[1] >= 0) & (vi[1] < mask.shape[1]) &
+          (vi[2] >= 0) & (vi[2] < mask.shape[2]))
+    out = np.zeros(bary_world.shape[0], bool)
+    idx = np.where(ok)[0]
+    out[idx] = mask[vi[0][idx], vi[1][idx], vi[2][idx]]
+    return out
 
 
 def sim_mesh(montage, model, subject):
@@ -65,7 +101,12 @@ def main():
     args = ap.parse_args()
 
     labeled, lab_aff, names = load_labeled(REG)
-    roi_order = list(names.values()) + [WHOLE_BRAIN]
+    # Tier-3 nuclei are extra ROWS after WholeBrain (overlap-allowed, E-field-only);
+    # absent on dev machines -> skip silently so 04 still runs the 25-ROI path.
+    tier3 = load_tier3_masks(TIER3_DIR)
+    if tier3:
+        print(f"Tier-3 nuclei (E-field only): {', '.join(n for n, _, _ in tier3)}")
+    roi_order = list(names.values()) + [WHOLE_BRAIN] + [n for n, _, _ in tier3]
 
     results = {}
     for model in MODELS:
@@ -81,10 +122,15 @@ def main():
             results[model] = None
             continue
         tag, e = msh.elm.tag1, msh.field["magnE"].value
-        elab = assign_mesh_labels(msh.elements_baricenters().value, labeled, lab_aff)
+        bary = msh.elements_baricenters().value
+        elab = assign_mesh_labels(bary, labeled, lab_aff)
         tissue = np.isin(tag, TISSUE_TAGS)
         results[model] = {n: roi_stats((elab == k) & tissue, tag, e) for k, n in names.items()}
         results[model][WHOLE_BRAIN] = roi_stats(tissue, tag, e)
+        # Tier-3 nuclei: each its own binary mask + affine, overlap allowed (no winner-take-all).
+        # May be legitimately empty in some subjects -> roi_stats returns NaN (06 is NaN-safe).
+        for tname, tmask, taff in tier3:
+            results[model][tname] = roi_stats(mask_select(bary, tmask, taff) & tissue, tag, e)
 
     available = [m for m in MODELS if results[m] is not None]
     if not available:

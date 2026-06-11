@@ -1,9 +1,14 @@
 """_rois.py — Shared ROI loading + sampling for the analysis scripts.
 
-The ROIs are the FastSurfer-derived masks in mesh space, built by analysis/build_rois.py:
-  registration/fastsurfer_rois/roi_labels_meshspace.nii.gz   int labels on the charm/mesh grid
-  registration/fastsurfer_rois/rois.json                     {label: name}
-covering cortical and white-matter lobes, corpus callosum, and the aseg subcortical structures.
+The ROIs are int-label masks in mesh space. The primary source is the recon-all parcellation
+(cohort-definitive, built by analysis/build_rois_freesurfer.py):
+  registration/freesurfer_rois/roi_labels_meshspace.nii.gz   int labels on the charm/mesh grid
+  registration/freesurfer_rois/rois.json                     {label: name}
+The FastSurfer pilot build (registration/fastsurfer_rois/, same two filenames) is used as a
+fallback when the recon-all output is not present.
+Coverage: cortical and white-matter lobes, corpus callosum, and the aseg subcortical structures
+(thalamus, caudate, putamen, pallidum, accumbens, hippocampus, amygdala, and the brainstem split
+into Mesencephalon + Pons).
 Both 04 (E-field per ROI) and 05 (MRE cross-modal comparison) consume this single labeled volume;
 each ROI is sampled over every element/voxel it contains (no fixed-radius spheres).
 """
