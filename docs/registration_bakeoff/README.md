@@ -6,7 +6,7 @@ fit/registration outputs by relative path and are not maintained for re-running.
 
 ## Decision: S0-driven AFFINE
 On the Synb0+topup distortion-corrected cohort, a 12-DOF affine (dMRI S0 → charm T2) is the registration.
-Scored on `PD_20230125_Control1`:
+Scored on the dry-run subject (one HC):
 
 | arm | WM FA-corr vs his FA | over-warp | peduncle S-I | verdict |
 |---|---|---|---|---|
