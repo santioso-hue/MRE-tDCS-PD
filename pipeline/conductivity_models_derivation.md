@@ -62,7 +62,7 @@ eigenvalue below `λ1/aniso_maxratio` is raised to `λ1/aniso_maxratio` (the bin
 non-positive-definite handling is asymmetric and worth stating: a tensor with **all three eigenvalues
 ≤ 0** is replaced by isotropic σ0, but a **mixed-sign** tensor (λ1>0, λ2/λ3≤0) is NOT isotropized — its
 negative eigenvalues are raised to `λ1/10`, yielding a spurious 10:1 prolate along an unreliable axis.
-On FullPD5 the DTI and MD-dMRI tensors have ~0% mixed-sign voxels in any ROI, so this branch is never
+In our data the DTI and MD-dMRI tensors have ~0% mixed-sign voxels in any ROI, so this branch is never
 exercised; the MD-dMRI arm additionally isotropizes its ~15% non-positive-definite ⟨D⟩ voxels upstream
 in `03` (those land in CSF/skull, not WM/GM). For the cohort, a per-arm mixed-sign rate per ROI should
 be logged so noisier or atrophied subjects do not silently take the prolate branch.
@@ -82,7 +82,7 @@ b-tensor-encoded MD-dMRI (linear + spherical encoding; the QTI framework of West
 Topgaard 2017) is fitted with the `md-dmri` toolbox. We use the **QTI covariance fit**
 (`dtd_covariance`: constrained, regularized, heteroscedastic), whose first cumulant is the
 **mean diffusion tensor ⟨D⟩** — the macroscopic diffusion tensor — stored in `cov_mfs.m(:,:,:,2:7)`
-(Mandel Voigt, SI). `pipeline/run_qti_cov.m` runs the fit; `prepare_dmri_tensor.py` reconstructs the
+(Mandel Voigt, SI). `pipeline/run_qti_cov_cohort.m` runs the fit; `prepare_dmri_tensor.py` reconstructs the
 full triaxial ⟨D⟩ and maps it by `'vn'`: σ ∝ ⟨D⟩. ⟨D⟩ is the *same macroscopic quantity* DTI
 estimates, with MD = trace(⟨D⟩)/3, but estimated within a model that places the non-Gaussian variance
 in a separate covariance term rather than letting it bias the mean. So ⟨D⟩ is a **less kurtosis-biased**
@@ -103,8 +103,8 @@ below real tissue, FA ≈ 1 — failed fits, not real anisotropy). Those voxels 
 ~98% positive-definite, and after the fallback the conductivity tensor reaches the 10:1 cap in <1% of
 voxels.
 
-The principal axis agrees with the *independent* single-shell DTI V1 to ~8° (median, core WM, in T1;
-see Registration — both arms use the same fnirt path). So the DTI↔MD-dMRI E-field contrast reflects
+The principal axis agrees with the *independent* single-shell DTI V1 to ~8° (median, core WM, in T1,
+measured on the HC pilot; see Registration — both anisotropic arms register by the same affine class). So the DTI↔MD-dMRI E-field contrast reflects
 **both** the tensor-estimation difference **and** a residual orientation difference from the separate
 DTI acquisition; it is not a magnitude-only comparison.
 Replacing the full-DTD mean with the QTI covariance mean shifts the deep-target E-field by ~1.6%
@@ -116,16 +116,15 @@ white-matter anisotropy (Suh, Lee & Kim 2012, Phys Med Biol 57:6961).
 The md-dmri toolbox keeps analysis in native diffusion space (its motion/eddy correction, the Elastix
 `AffineDTITransform`, is already applied upstream; the fit runs on the corrected series). A FEM head
 model needs the conductivity tensor on the 1 mm T1/mesh grid, so we bring ⟨D⟩ to T1 — the
-SimNIBS-standard direction. The registration *class* depends on whether the dMRI is EPI-distortion-
-corrected (see the distortion-correction caveat at the end of this section): the **pilot** (no topup)
-uses **nonlinear fnirt of FA(⟨D⟩) → T1**, identical to dwi2cond's DTI path (`regmthd=nonl`) so both
-anisotropic arms register the same way and the only DTI↔MD-dMRI difference is the tensor; the
-Synb0+topup-corrected **cohort** uses an affine FA(⟨D⟩) → T1. The fnirt description below is the pilot
-path. fnirt also corrects the EPI distortion a rigid map leaves — on the
-QTI tensor the principal axis agrees with the independent dwi2cond DTI V1 to **8.4°** (core WM) under
-fnirt versus **20.2°** under rigid b0, at equal GM+WM coverage. (An earlier staged test had favoured
-rigid, but it was run on the now-dropped full-DTD tensor and scored on a coarse brain-coverage Dice;
-re-run on the QTI tensor and scored on orientation, nonlinear is clearly better.)
+SimNIBS-standard direction. The cohort dMRI is EPI-distortion-corrected upstream (Synb0 synthetic
+reverse-PE + `topup` + eddy), so an **affine dMRI → T1** is the right class (see the distortion-correction
+note below). The registration is a **12-DOF affine driven by the dMRI model S0**, FLIRT to the charm T2
+(mutual information), then applied to FA / eigenvalues / v1 by `vecreg`; the S0 driver is chosen by a
+per-subject orientation bake-off (S0 beats FA as a driver, and `fnirt` over-warps the already-corrected
+data). The DTI baseline (`dwi2cond`) registers by the same affine class (`-r 12dof`), so both anisotropic
+arms share a registration path and the only DTI↔MD-dMRI difference is the tensor. (Historical: an earlier
+single-HC pilot lacked a reverse-PE volume, so it used the `dwi2cond`-default nonlinear `fnirt` FA → T1
+substitute — kept locally, not in this repo.)
 
 Bringing the tensor across requires *reorienting* it, not just resampling components. We decompose:
 the three eigenvalues are warped **independently** as scalar maps (`applywarp`, trilinear), and the
@@ -139,23 +138,17 @@ Whole-tensor component-wise interpolation, by contrast, averages neighbouring te
 anisotropy — the tensor "swelling" that log-Euclidean interpolation (Arsigny 2006) and PPD
 reorientation are designed to avoid. Our scheme is a pragmatic stand-in for full log-Euclidean tensor
 interpolation (e.g. DTI-TK): it preserves the native anisotropy at the cost of not reproducing the
-partial-volume blurring the 2.5 mm resolution incurs (a disclosed trade-off). With the move to fnirt
-the MD-dMRI and DTI arms now use the *same* registration path, so registration no longer confounds
-their E-field contrast.
+partial-volume blurring the 2.5 mm resolution incurs (a disclosed trade-off). Both anisotropic arms
+register by the same affine class, so registration does not confound their E-field contrast.
 
-**Distortion correction governs the registration choice — and it differs between the pilot and the
-cohort.** The gold-standard EPI-distortion correction is FSL `topup` with a reverse-phase-encode b=0,
-after which a *rigid/affine* dMRI→T1 coregistration suffices — this is what the SimNIBS team does
-(Mosayebi-Samani et al. 2025). The **pilot** acquisition has no reverse-PE volume, so `topup` is not
-available; the fnirt FA→T1 path above is the `dwi2cond`-default substitute (it absorbs the residual
-distortion into the warp, at the cost of conflating it with anatomy), and matches the DTI arm
-(`dwi2cond --all`, `regmthd=nonl`) so registration does not confound the contrast. The **cohort** is
-already distortion-corrected upstream (Synb0 synthetic reverse-PE + `topup` + eddy), so the distortion
-fnirt would absorb is gone; per the SimNIBS-preferred logic an **affine dMRI→T1** is the right class
-there, and over-warping with fnirt would risk re-introducing spurious deformation. The registration
-class is therefore chosen per data regime and **validated per subject** by orientation scoring (the
-warped ⟨D⟩ principal axis against anatomy — corpus callosum left–right, cerebral peduncle
-superior–inferior — and against the delivered scalar references), rather than assumed.
+**Distortion correction governs the registration choice.** The gold-standard EPI-distortion correction
+is FSL `topup` with a reverse-phase-encode b=0, after which a *rigid/affine* dMRI→T1 coregistration
+suffices — this is what the SimNIBS team does (Mosayebi-Samani et al. 2025). The cohort is already
+distortion-corrected upstream (Synb0 synthetic reverse-PE + `topup` + eddy), so an **affine dMRI→T1** is
+the right class; over-warping with `fnirt` would risk re-introducing spurious deformation on
+already-corrected data. The registration is **validated per subject** by orientation scoring (the warped
+⟨D⟩ principal axis against anatomy — corpus callosum left–right, cerebral peduncle superior–inferior —
+and against the delivered scalar references), rather than assumed.
 
 ## ROI definition
 
@@ -166,9 +159,8 @@ frontal/parietal/temporal/occipital, WM from the real wmparc), corpus callosum, 
 structures (thalamus, caudate, putamen, pallidum, accumbens, hippocampus, amygdala), and the
 mesencephalon/pons split from the Iglesias 2015 brainstem subsegmentation. Whole-brain GM+WM is taken
 from the charm tissue tags downstream. This matches Olsson et al. 2025, which used FreeSurfer 7.2 for
-the same structures; the cohort ships `recon-all` pre-computed and the pilot's ran on the cluster, so
-the parcellation is consumed directly (`recon-all` is run on the cluster whenever a new subject needs
-it). The recon-all segmentation is registered to the charm T1 (FLIRT 6-DOF rigid) so the masks land in
+the same structures; the cohort ships `recon-all` pre-computed, so the parcellation is consumed
+directly (`recon-all` is run on the cluster whenever a new subject needs it). The recon-all segmentation is registered to the charm T1 (FLIRT 6-DOF rigid) so the masks land in
 the FEM/E-field space. The fine midbrain nuclei
 (SNc/SNr/VTA/RN/STN), below aseg resolution, come from the CIT168/Pauli 2017 atlas warped via ANTs
 (`analysis/07_build_tier3_nuclei.sh`) and merge into the ROI set when needed. Each ROI is sampled over
@@ -196,10 +188,10 @@ every GM/WM element it contains, not a fixed-radius sphere.
 - **Validation.** No in-vivo conductivity ground truth exists; the model is motivated by bias
   arguments, not direct validation. MR current-density imaging (MRCDI/MREIT; Gregersen 2024) is the
   planned validation route.
-- **DTI baseline.** The DTI model is a separate single-shell acquisition, but it is now registered by
-  the *same* fnirt FA→T1 path as the MD-dMRI arm; its principal direction differs from ⟨D⟩ by ~8°
-  (median, core WM), reflecting the genuine tensor-estimation/acquisition difference rather than a
-  registration-method mismatch.
+- **DTI baseline.** The DTI model is a separate single-shell acquisition, but it is registered by the
+  *same* affine FA/S0→T1 class as the MD-dMRI arm; its principal direction differs from ⟨D⟩ by ~8°
+  (median, core WM, measured on the HC pilot), reflecting the genuine tensor-estimation/acquisition
+  difference rather than a registration-method mismatch.
 
 ## References
 

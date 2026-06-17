@@ -7,7 +7,7 @@
 #   source (simnibs/external/dwi2cond + dwi2cond.prepro.source.sh): the positional order is
 #       dwi2cond [options] <subID> <DWI> <bval> <bvec>
 #   and it is mapped correctly internally (BVALS=$3 → DWIbvals, BVECS=$4 → DWIbvecs).
-#   `dwi2cond --all` runs cleanly on FullPD5 and IS the SimNIBS-standard, validated path:
+#   `dwi2cond --all` runs cleanly and IS the SimNIBS-standard, validated path:
 #       eddy_correct  →  dtifit  →  FA→T1 registration  →  vecreg (tensor reorientation)  →  brain-mask.
 #   The original failure was a mis-ordered manual call, not a tool bug.
 #

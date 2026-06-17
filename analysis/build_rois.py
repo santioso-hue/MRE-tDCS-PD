@@ -2,9 +2,9 @@
 build_rois.py — recon-all (FreeSurfer) ROI masks in charm/mesh space for the tDCS E-field analysis.
 
 The single ROI builder, matching Olsson et al. 2025 (FreeSurfer 7.2). Needs a recon-all subject dir
-(and FSL for the charm registration); the cohort ships recon-all PRE-COMPUTED in
-sanoso/cohort_data/ReconAlls/<subj>, and the pilot's recon-all ran on the cluster, so this runs locally
-with no recon-all step. Whenever a recon-all is needed for a new subject, it is run on the cluster.
+(and FSL for the charm registration); the cohort ships recon-all PRE-COMPUTED in ReconAlls/<subj>, so
+this runs locally with no recon-all step. Whenever a recon-all is needed for a new subject, it is run
+on the cluster.
 
 Emits ROI masks in the charm mesh (E-field) space:
   Ctx lobes x4    roi_Ctx_{Frontal,Parietal,Temporal,Occipital}   (Desikan grouped to lobes)

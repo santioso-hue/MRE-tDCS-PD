@@ -115,14 +115,14 @@ def main():
         x, y = col(a), col(b); m = np.isfinite(x) & np.isfinite(y)
         return (spearmanr(x[m], y[m])[0], int(m.sum())) if m.sum() >= 4 else (np.nan, int(m.sum()))
 
-    print(f"Consistency (n={len(rows)} ROIs, single HC). Expect MD vs stiffness NEG, uFA vs stiffness POS.")
+    print(f"Consistency (n={len(rows)} ROIs, this subject). Expect MD vs stiffness NEG, uFA vs stiffness POS.")
     print(f"  {'pair':<26}{'GATED':>14}{'ungated':>14}")
     for a in ["MD", "uFA", "cond_aniso", "alpha", "dE_model"]:
         rg, ng = corr(a, "stiffness")          # GATED column (CSF-adjacent cortex excluded)
         ru, nu = corr(a, "stiffness_ung")      # ungated sensitivity
         print(f"  {a+' vs stiffness':<26}{f'rho={rg:+.2f}(n={ng})':>14}{f'rho={ru:+.2f}(n={nu})':>14}")
-    print("\nGATED is primary (Olsson MRE handling); ungated is the sensitivity. n=1 -> across-region")
-    print("trend, not a statistical result. The cohort runner aggregates this per subject.")
+    print("\nGATED is primary (Olsson MRE handling); ungated is the sensitivity. Per subject (n=1 subject)")
+    print("-> across-region trend, not a statistical result. The cohort runner aggregates this per subject.")
 
 
 if __name__ == "__main__":

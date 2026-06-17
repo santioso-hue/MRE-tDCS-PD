@@ -1,8 +1,8 @@
 # MAIA cluster runbook — full cohort (12 PD + 17 HC)
 
-Execute on the MAIA workspace once SSH access is set up. The per-subject forward pipeline is
-pilot-verified on FullPD5; this scales it to the cohort and adds the recon-all parcellation, the four
-montages, and the group statistics. Do NOT commit/push from the cluster agent — the user handles git.
+Execute on the MAIA workspace once SSH access is set up. The per-subject forward pipeline was validated
+on a single HC pilot (kept locally, untracked); this scales it to the cohort and adds the recon-all
+parcellation, the four montages, and the group statistics. Do NOT commit/push from the cluster — the user handles git.
 
 ## Decisions to lock BEFORE the batch
 - **FreeSurfer version:** match Olsson's 7.2 if available; else document 8.2.0 (`analysis/build_rois.py`
@@ -28,8 +28,8 @@ montages, and the group statistics. Do NOT commit/push from the cluster agent �
 ## Phase 1 — extended pilots (item I.13): 2–3 REAL subjects, >=1 PD and >=1 HC
 Run the full Phase-2 chain on 2–3 subjects with **manual QC at every stage** (FSLeyes/freeview via the
 Remote Desktop). PD brains (atrophy, enlarged ventricles, iron) break segmentation/registration in ways
-FullPD5 will not. Gate the full batch on these passing. Check especially: charm tissue seg, fnirt
-FA->T1 alignment, recon-all parcellation in atrophied cortex, and sim |E| in the physiological band.
+a healthy-control pilot will not. Gate the full batch on these passing. Check especially: charm tissue seg,
+S0-affine dMRI->T1 alignment, recon-all parcellation in atrophied cortex, and sim |E| in the physiological band.
 
 ## Phase 2 — per-subject forward pipeline (SLURM array over the 29)
 Dependency-ordered. **charm and recon-all are independent (both from T1) — run in parallel; recon-all is
@@ -40,7 +40,7 @@ the long pole, so launch it first.**
 | 1 | Head model | `pipeline/00_charm.sh` | T1, T2 | 1–2 h |
 | 2 | Parcellation | `recon-all -all` then `segmentBS.sh` | T1 | **6–12 h** (long pole) |
 | 3 | DTI conductivity | `pipeline/01_dwi2cond.sh` | m2m (1) | ~30 min |
-| 4 | QTI covariance fit | `pipeline/run_qti_cov.m` (MATLAB) | fit/ inputs | 10–30 min |
+| 4 | QTI covariance fit | `pipeline/run_qti_cov_cohort.m` (via run_qti_cov_cohort.sh) | fit/ inputs | 10–30 min |
 | 5 | Build ⟨D⟩ maps | `pipeline/prepare_dmri_tensor.py` | (4) | fast (invoked automatically by stage 6, step 1) |
 | 6 | Register dMRI→T1 | `pipeline/02_register_dmri_to_T1.sh` | m2m (1), (5) | S0-driven 12-DOF affine, ~1 min; emits s0_T1/FA_T1 (QC), MD_T1/uFA_T1, lam{1,2,3}_T1, tensor_triaxial_T1, v1_T1, dMRI_mask_T1 |
 | 7 | Conductivity tensor | `pipeline/03_build_conductivity_tensor.py` | (6) | fast |

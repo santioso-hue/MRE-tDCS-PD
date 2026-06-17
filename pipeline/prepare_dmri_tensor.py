@@ -3,7 +3,7 @@ prepare_dmri_tensor.py — Reconstruct the QTI covariance mean tensor <D> and su
 md-dmri toolbox covariance fit (Westin et al. 2016), in dMRI space, ready for registration to T1.
 Called by 02_register_dmri_to_T1.sh.
 
-Upstream: run_qti_cov.m (pilot) / run_qti_cov_cohort.m (cohort) run the md-dmri `dtd_covariance` fit
+Upstream: run_qti_cov_cohort.m runs the md-dmri `dtd_covariance` fit
 (constrained, heteroscedasticity-corrected) on the motion/eddy-corrected data and write qti_cov/
 cov_mfs.mat (model fit) and cov_dps.mat (derived parameters). <D> is the first cumulant of the QTI
 signal model — the macroscopic mean diffusion tensor — stored in cov_mfs.m(:,:,:,2:7) in Mandel
@@ -41,10 +41,10 @@ import scipy.io          # noqa: E402
 
 FDIR, RDIR = cfg["FIT_DIR"], cfg["REG_DIR"]
 os.makedirs(RDIR, exist_ok=True)
-# dMRI-space affine/header reference. The pilot used a delivered dMRI-space map (dtd_covariance_C_mu);
-# the cohort has no dMRI-space delivered scalar (its maps are *_to_t1), so allow a DMRI_REF override
-# pointing at any 3D image on the fit grid (e.g. a b0 / vol0 of the merged fit input).
-ref = nib.load(os.environ.get("DMRI_REF") or os.path.join(FDIR, "dtd_covariance_C_mu.nii.gz"))   # dMRI-space affine/header
+# dMRI-space affine/header reference: any 3D image on the fit grid. run_qti_cov_cohort.m writes
+# qti_cov/dmri_grid_ref.nii.gz for exactly this; 02_register_dmri_to_T1.sh exports DMRI_REF to point
+# at it (or another fit-grid image, e.g. a b0/vol0 of the merged fit input).
+ref = nib.load(os.environ.get("DMRI_REF") or os.path.join(FDIR, "qti_cov", "dmri_grid_ref.nii.gz"))   # dMRI-space affine/header
 
 
 def save(arr, name):

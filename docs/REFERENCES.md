@@ -81,8 +81,8 @@ Organized by role in the project. All citations are used in scripts, docs, or ma
 **Pasternak O, Sochen N, Gur Y, Intrator N, Assaf Y (2009).** Free water elimination and mapping from diffusion MRI.
 *Magnetic Resonance in Medicine* 62(3):717–730.
 → FWE removes the isotropic free-water compartment. **It defines the canonical MD-dMRI model** (`01e`/`02`),
-generalised to the QTI 3-compartment fit: ⟨D⟩_tissue = (Σ_{k≠FW} f_k D_k)/(Σ_{k≠FW} f_k), raising the median
-⟨D⟩ anisotropy from 1.92 to 2.13 in this subject. Plain ⟨D⟩ (no FWE) is the `--meanD` sensitivity.
+generalised to the QTI 3-compartment fit: ⟨D⟩_tissue = (Σ_{k≠FW} f_k D_k)/(Σ_{k≠FW} f_k). FWE was
+evaluated and not adopted under `'vn'`; plain ⟨D⟩ (no FWE) is the `--meanD` sensitivity.
 
 ---
 

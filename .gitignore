@@ -66,3 +66,7 @@ venv/
 
 # Local machine config (paths, subject ID)
 config/config.sh
+
+# Pilot (FullPD5) — superseded by the cohort; kept locally for reference, not tracked
+pipeline/run_qti_cov.m
+references/

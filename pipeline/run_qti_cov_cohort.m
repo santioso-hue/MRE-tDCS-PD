@@ -1,9 +1,8 @@
 % run_qti_cov_cohort.m — QTI covariance fit for the COHORT (md-dmri) -> oriented mean tensor <D>.
 %
-% Cohort adaptation of pipeline/run_qti_cov.m. The pilot consumed a pre-combined, ALREADY-SMOOTHED
-% LTE_STE_PTE_mc_s.nii.gz + delivered _xps.mat and called data2fit directly (no extra smoothing).
-% The cohort (MUDI_synb0/<subj>/) instead delivers the two encodings as SEPARATE Synb0+topup+eddy-
-% corrected, UN-smoothed series with bval/bvec:
+% Input contract: the cohort (MUDI_synb0/<subj>/) delivers the two b-tensor encodings as SEPARATE
+% Synb0+topup+eddy-corrected, UN-smoothed series with bval/bvec (not a pre-combined, pre-smoothed
+% series), so this fit builds the xps + merge + smoothing itself:
 %   linear_corrected.{nii.gz,bval,bvec}    = LTE  -> b_delta = +1
 %   spherical_corrected.{nii.gz,bval,bvec} = STE  -> b_delta =  0   (isotropic; directions unused)
 %
@@ -16,7 +15,7 @@
 % Authoritative source (references/ParkMREPipeline, chrol_pipeline):
 %   mudi_synb0plusmc_v3.m  -> b_deltas=[1 0], mdm_s_merge({s_lte,s_ste}, ...)
 %   step4_fit_model_*.m, branch 'covariance_CO' ("This one was run for PD paper"): filter_sigma=0.7
-% The pilot's no-smoothing path is WRONG for the cohort (its input was pre-smoothed; the cohort's is not).
+% The cohort input is UN-smoothed, so we apply filter_sigma=0.7 here (do not skip the smoothing step).
 %
 % Usage (paths from env; see run_qti_cov_cohort.sh):
 %   DMRI_IN=<dir with linear_/spherical_corrected> FIT_OUT=<out dir> MDDMRI_DIR=<md-dmri> \
@@ -58,7 +57,7 @@ fprintf('Merged %d vols (LTE %d + STE %d); b %.0f..%.0f s/mm^2; LTE(b>0)=linear,
     s.xps.n, n_lte, s_ste.xps.n, min(bb)/1e6, max(bb)/1e6);
 
 % Fail fast on a degenerate encoding set, before the per-voxel fit (dtd_covariance_pipe's first step).
-% We build the xps + merge ourselves here, unlike the pilot's vetted pre-combined series, so check it.
+% We build the xps + merge here (rather than consuming a pre-combined series), so check it.
 dtd_covariance_check_xps(s.xps, opt);
 
 % --- step2: elastix inter-series motion/eddy co-registration (chrol step2_motion_correction_kth) ---

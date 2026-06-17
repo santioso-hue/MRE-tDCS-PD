@@ -25,7 +25,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _sims import sim_mesh, MODELS  # noqa: E402  (shared montage-aware mesh lookup)
 
 # thresholds
-# Absolute thresholds are STARTING POINTS calibrated on the pilot (n=1). Items marked [PROV] are
+# Absolute thresholds are STARTING POINTS seeded from a single-subject pilot (n=1). Items marked [PROV] are
 # provisional single-subject cutoffs — with one subject we cannot know the cohort spread, so these
 # should be recalibrated as a cohort PERCENTILE (e.g. flag below the 5th percentile) once 5-8
 # subjects are processed. The MAD>3 cohort-outlier pass in main() (active only at n>=4) is the real
@@ -226,7 +226,7 @@ def qc_register(P):
     # (3) edge alignment — gradient-magnitude correlation of the registered b0 vs T1 inside the brain.
     # Containment catches gross cutoff and CC-V1 catches tensor rotation, but NEITHER catches a few-mm
     # rigid shift that still covers the brain. A shift misaligns tissue boundaries, so |grad| correlation
-    # drops sharply (BBR principle): pilot ~0.19 aligned, -40% at 4 mm. (NMI on this b0/T1 pair is
+    # drops sharply (BBR principle): roughly 0.19 when aligned, about -40% at a 4 mm shift. (NMI on this b0/T1 pair is
     # near the information floor and barely moves under a shift, so it is NOT used.)
     try:
         from scipy import ndimage
@@ -400,7 +400,7 @@ def resolve_subjects(args):
 
 # [PROV] / directional metrics -> which tail to guard once a cohort exists ("low" = flag below the
 # lower tail, "high" = flag above the upper tail). Used by --calibrate to turn single-subject cutoffs
-# into cohort percentiles (point 2 of the review: don't freeze 0.76-derived thresholds at n=1).
+# into cohort percentiles, rather than freezing provisional single-subject thresholds at n=1.
 CALIB = {"reg_grad_corr": "low", "reg_cc_v1x": "low", "reg_containment": "low",
          "dwi2cond_cc_fa": "low", "charm_tet_q_med": "low",
          "dwi2cond_csf_fa": "high", "charm_tet_q_badfrac": "high"}
