@@ -17,9 +17,9 @@ The dE relevance map (item 2) needs the DTI arm (dE = E_MD-dMRI - E_DTI); it is 
 
 E-field statistic: MEDIAN per ROI (Olsson's ROI convention; item F); p95 reported as a sensitivity column.
 
-Run:  cd <repo>;  simnibs_python analysis/05_mre_efield_comparison.py [--conf-thresh V | --conf-pct P]
+Run:  PIPELINE_CONFIG=<subject config.sh> simnibs_python analysis/05_mre_efield_comparison.py
 """
-import os, sys, csv, argparse
+import os, sys, csv
 import numpy as np
 import nibabel as nib
 import scipy.ndimage as ndi
@@ -93,9 +93,6 @@ def extract_subject(gate):
 
 
 def main():
-    ap = argparse.ArgumentParser()
-    ap.parse_args()
-
     gate, frac = build_gate()
     print(f"MRE gate: no per-voxel confidence (subject-level GoodMRE+alphapositive QC); CSF-adjacent "
           f"cortex excluded -> {100*frac:.1f}% of brain kept")
@@ -120,11 +117,10 @@ def main():
 
     print(f"Consistency (n={len(rows)} ROIs, single HC). Expect MD vs stiffness NEG, uFA vs stiffness POS.")
     print(f"  {'pair':<26}{'GATED':>14}{'ungated':>14}")
-    for a, b in [("MD", "stiffness"), ("uFA", "stiffness"), ("cond_aniso", "stiffness"),
-                 ("alpha", "stiffness"), ("dE_model", "stiffness")]:
-        rg, ng = corr(a, b + ("" if b != "stiffness" else ""))
-        ru, nu = corr(a, b + "_ung") if b == "stiffness" else (rg, ng)
-        print(f"  {a+' vs '+b:<26}{f'rho={rg:+.2f}(n={ng})':>14}{f'rho={ru:+.2f}(n={nu})':>14}")
+    for a in ["MD", "uFA", "cond_aniso", "alpha", "dE_model"]:
+        rg, ng = corr(a, "stiffness")          # GATED column (CSF-adjacent cortex excluded)
+        ru, nu = corr(a, "stiffness_ung")      # ungated sensitivity
+        print(f"  {a+' vs stiffness':<26}{f'rho={rg:+.2f}(n={ng})':>14}{f'rho={ru:+.2f}(n={nu})':>14}")
     print("\nGATED is primary (Olsson MRE handling); ungated is the sensitivity. n=1 -> across-region")
     print("trend, not a statistical result. The cohort runner aggregates this per subject.")
 
