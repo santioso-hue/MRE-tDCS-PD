@@ -13,7 +13,7 @@ Monte-Carlo mean here), and has a reliable eigenframe (principal axis agrees wit
 to ~14 deg in core WM, vs ~40 deg for the Monte-Carlo mean).
 
 Outputs (registration/, dMRI space):
-  s0_dMRI.nii.gz               model S0 (cov_dps.s0); the dMRI->T1 registration driver (matches Christoffer)
+  s0_dMRI.nii.gz               model S0 (cov_dps.s0); the dMRI->T1 registration driver (matches the upstream ParkMRE pipeline)
   tensor_triaxial_dMRI.nii.gz  6-comp <D> [Dxx,Dxy,Dxz,Dyy,Dyz,Dzz], um2/ms (reoriented to T1 by vecreg)
   lam1/lam2/lam3_dMRI.nii.gz   eigenvalues l1>=l2>=l3 (scalar; trilinear -> magnitude, preserves anisotropy)
   v1_dMRI.nii.gz               principal eigenvector cov_dps.u (reoriented to T1; anchors the principal axis)
@@ -115,7 +115,7 @@ n = np.linalg.norm(u, axis=-1, keepdims=True)
 save(u / np.where(n > 0.1, n, 1.0), "v1_dMRI.nii.gz")
 
 # --- model S0 (cov_dps.s0): the dMRI->T1 registration driver. Whole-brain T2-like contrast (the
-# signal Christoffer registers off via dtd_s0); far better than FA, which is WM-only and noisy. ---
+# signal the upstream ParkMRE pipeline registers off via dtd_s0); far better than FA, which is WM-only and noisy. ---
 s0 = np.nan_to_num(np.real(np.asarray(dps.s0)).astype(np.float64)); s0[~mask] = 0.0
 save(s0, "s0_dMRI.nii.gz")
 

@@ -64,7 +64,7 @@ Organized by role in the project. All citations are used in scripts, docs, or ma
 
 **Topgaard D (2017).** Multidimensional diffusion MRI.
 *Journal of Magnetic Resonance* 275:98–113.
-→ DPS (Diffusion Propagator Spectroscopy) model. Single mean compartment tensor fit under prolate (axially symmetric) constraint: D_ij = (λ₁−λ₂)·v1_i·v1_j + λ₂·δ_ij. Outputs μFA, MD, v₁. This is the analysis framework Christoffer's group uses. NOT a SimNIBS concept.
+→ DPS (Diffusion Propagator Spectroscopy) model. Single mean compartment tensor fit under prolate (axially symmetric) constraint: D_ij = (λ₁−λ₂)·v1_i·v1_j + λ₂·δ_ij. Outputs μFA, MD, v₁. This is the analysis framework the dataset's group (Olsson et al. 2025) uses. NOT a SimNIBS concept.
 
 **Lasič S, Szczepankiewicz F, Eriksson S, Nilsson M, Topgaard D (2014).** Microanisotropy imaging: quantification of microscopic diffusion anisotropy and orientational order parameter by diffusion MRI with magic-angle spinning of the q-vector.
 *Frontiers in Physics* 2:11.

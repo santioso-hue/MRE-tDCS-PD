@@ -2,9 +2,9 @@
 # registration_bakeoff_s0.sh — add an S0(b0)-driven AFFINE arm to the bake-off.
 #
 # Diagnostic for the weak FA-driven affine (CC ~45deg off, r=0.71): FA is a poor registration driver
-# (noisy, WM-only). Christoffer drove his registration off the dMRI S0/b0 (whole-brain, T2-like
-# contrast). This registers the dMRI b0 -> charm T2 (same T2 weighting => robust, same as his S0->T2
-# step) to get a dMRI->charm affine, then applies it to FA + v1 (vecreg -t). Output: REG_DIR/bakeoff/
+# (noisy, WM-only). The ParkMRE pipeline (Olsson et al. 2025) drives registration off the dMRI S0/b0
+# (whole-brain, T2-like contrast). This registers the dMRI b0 -> charm T2 (same T2 weighting => robust,
+# matching that S0->T2 pairing) to get a dMRI->charm affine, then applies it to FA + v1 (vecreg -t). Output: REG_DIR/bakeoff/
 # affine_s0/. Score with analysis/score_registration_bakeoff.py (affine_s0 is in its ARMS list).
 #
 # Usage:  PIPELINE_CONFIG=<subject config.sh> bash pipeline/registration_bakeoff_s0.sh

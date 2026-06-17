@@ -17,7 +17,7 @@ Rewritten after an adversarial code review. Three metrics, both arms, ONE shared
       warp's Jacobian is dominated by the affine's 2.5mm->1mm scale and is NOT an over-warp measure;
       the nonlinear part is. A topup-corrected cohort should need little of it.
 
-  (3) SPATIAL (corroborating): Pearson r of each arm's warped FA vs Christoffer's delivered
+  (3) SPATIAL (corroborating): Pearson r of each arm's warped FA vs the dataset's delivered
       dtd_covariance_FA_to_t1 (resampled into charm space), over the SHARED mask, plus a WM-restricted r
       (less dominated by global GM/WM contrast). Treated as supporting evidence, not the sole driver
       (a more flexible model fits a reference better regardless of anatomical correctness).
@@ -72,7 +72,7 @@ def simnibs_M(affine):
 
 
 def his_FA_in_charm(bm):
-    """Christoffer's dtd_covariance_FA_to_t1 -> charm grid via orig.mgz->charm FLIRT rigid.
+    """The dataset's dtd_covariance_FA_to_t1 -> charm grid via orig.mgz->charm FLIRT rigid.
     Returns (FA on charm grid clipped to [0,1], recall of charm brain covered by orig, reference_ok)."""
     orig_mgz = os.path.join(DATA, "recon", "mri", "orig.mgz")
     his_fa = os.path.join(DATA, "dmri", "dtd_covariance_FA_to_t1_antstrans.nii.gz")
@@ -188,7 +188,7 @@ def overwarp_metric(bm):
 
 def main():
     bm, _head = brain_mask_charm()
-    print("Resampling Christoffer's FA_to_t1 into charm space (orig.mgz -> charm FLIRT rigid)...")
+    print("Resampling the dataset's FA_to_t1 into charm space (orig.mgz -> charm FLIRT rigid)...")
     his_fa, recall, ref_ok = his_FA_in_charm(bm)
     print(f"  reference brain recall (charm GM+WM covered by orig->charm) = {recall:.3f} "
           f"({'OK' if ref_ok else 'LOW -- spatial metric suspect'})")

@@ -7,7 +7,7 @@
 % Output names match downstream prepare_dmri_tensor.py:
 %   cov_mfs.mat  (<D> = m(:,:,:,2:7))   cov_dps.mat  (MD, uFA, eigenvector u)
 %
-% Reproduces Christoffer's PD-paper covariance fit (references/ParkMREPipeline, chrol_pipeline):
+% Reproduces the PD-paper covariance fit from the dataset's ParkMRE preprocessing pipeline (Olsson et al. 2025):
 %   mudi_synb0plusmc_v3.m  -> b_deltas=[1 0], mdm_s_merge({s_lte,s_ste}, ...)
 %   step4_fit_model_*.m, branch 'covariance_CO' ("This one was run for PD paper"): filter_sigma=0.7
 %
@@ -28,7 +28,7 @@ sph = fullfile(dmri_in, 'spherical_corrected.nii.gz');  % STE
 
 opt = dtd_covariance_opt(mdm_opt());
 opt.do_overwrite = 1;
-opt.filter_sigma = 0.7;     % chrol step4 'covariance_CO' (PD paper); cohort input is un-smoothed
+opt.filter_sigma = 0.7;     % ParkMRE step4 'covariance_CO' (PD paper); cohort input is un-smoothed
 
 % per-series xps, tagging the b-tensor shape (CRITICAL: LTE=+1, STE=0)
 [lb, lv] = mdm_fn_nii2bvalbvec(lin);
@@ -52,7 +52,7 @@ fprintf('Merged %d vols (LTE %d + STE %d); b %.0f..%.0f s/mm^2; LTE(b>0)=linear,
 % Fail fast on a degenerate encoding set before the per-voxel fit, since we build the xps here.
 dtd_covariance_check_xps(s.xps, opt);
 
-% step2: elastix inter-series motion/eddy co-registration (chrol step2_motion_correction_kth).
+% step2: elastix inter-series motion/eddy co-registration (ParkMRE step2_motion_correction).
 % LTE and STE are eddy/topup-corrected per series upstream but NOT co-aligned to each other; the
 % covariance fit fuses them per voxel, so residual inter-series motion inflates MD / suppresses FA.
 % Reference = b<=1100 s/mm^2; affine elastix; mec_b0 then extrapolation-based mec_eb. Needs elastix on PATH.

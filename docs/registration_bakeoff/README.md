@@ -14,7 +14,7 @@ Scored on the dry-run subject (one HC):
 | **S0-driven affine** | **0.84** | **none** | **pass** | **chosen** |
 | fnirt (nonlinear) | 0.76 | **median 5.17 mm** | pass | rejected (over-warps) |
 
-fnirt over-warps already-corrected data without improving alignment; the S0 driver (Christoffer's
+fnirt over-warps already-corrected data without improving alignment; the S0 driver (the ParkMRE pipeline's
 `dtd_s0`) beats the FA driver. CC L-R is resolution-limited at 2.5 mm (native dMRI ≈ 0.56), so the
 cerebral-peduncle S-I check is the orientation gate (now automated in `qc_harness`, `reg_peduncle_siz`).
 
