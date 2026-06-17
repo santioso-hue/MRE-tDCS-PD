@@ -37,6 +37,7 @@ FSLDIR="${HOME}/fsl"
 
 # MRE (magnetic resonance elastography) maps — for the post-hoc cross-modal comparison.
 MRE_STIFFNESS="${NII_DIR}/stiffness.nii.gz"     # |G*| magnitude (kPa-scale)
-MRE_STORAGE="${NII_DIR}/storage_modulus.nii.gz" # G' (real shear modulus)
-MRE_LOSS="${NII_DIR}/loss_modulus.nii.gz"       # G'' (loss modulus); viscosity ~ atan(G''/G')
-MRE_CONFIDENCE="${NII_DIR}/mre_confidence.nii.gz"
+MRE_ALPHA="${NII_DIR}/alpha.nii.gz"             # springpot exponent (elastic<->viscous); cohort uses this
+MRE_STORAGE="${NII_DIR}/storage_modulus.nii.gz" # G' (real shear modulus); leave "" if not available
+MRE_LOSS="${NII_DIR}/loss_modulus.nii.gz"       # G'' (loss modulus); viscosity ~ atan(G''/G'); "" if n/a
+MRE_CONFIDENCE="${NII_DIR}/mre_confidence.nii.gz"  # leave "" -> no per-voxel gate (use subject-level QC)

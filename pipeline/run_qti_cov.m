@@ -4,7 +4,7 @@
 % tensor is m(:,:,:,2:7)) and cov_dps.mat (MD, uFA, principal eigenvector u). prepare_dmri_tensor.py
 % reads these. Run this once in MATLAB before pipeline/02_register_dmri_to_T1.sh.
 %
-% The constrained/regularized/heteroscedastic covariance fit is the standard QTI estimate of the
+% The constrained, heteroscedasticity-corrected covariance fit is the standard QTI estimate of the
 % macroscopic mean diffusion tensor — not magnitude-inflated and with a reliable eigenframe, unlike
 % the full DTD Monte-Carlo mean. Fit runs on the already motion/eddy-corrected (+smoothed) series, so
 % no extra smoothing here (we call data2fit directly rather than dtd_covariance_pipe).

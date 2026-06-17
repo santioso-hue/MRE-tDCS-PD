@@ -31,7 +31,7 @@
 
 set -euo pipefail
 
-# Resolve the repo root BEFORE any cd, so --ini is stable regardless of CWD or how the script is
+# Resolve the repo root BEFORE any cd, so --usesettings is stable regardless of CWD or how the script is
 # invoked. After `cd "$OUT_DIR"`, a `$0`-relative path would resolve against the wrong directory.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -73,7 +73,7 @@ echo ""
 caffeinate -i \
   charm "$SUBJECT_ID" "$T1" "$T2" \
     --forceqform \
-    --ini "$INI_PATH" \
+    --usesettings "$INI_PATH" \
     2>&1 | tee "charm_${SUBJECT_ID}.log"
 
 # `set -o pipefail` makes this pipeline return charm's exit status, not tee's, so a failed

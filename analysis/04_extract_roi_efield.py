@@ -28,13 +28,11 @@ sys.path.insert(0, os.path.join(ROOT, "pipeline"))
 from _config import cfg  # noqa: E402
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _rois import load_labeled, assign_mesh_labels  # noqa: E402
+from _sims import MODELS, sim_mesh                   # noqa: E402  (shared montage-aware mesh lookup)
 
 WDIR, REG = cfg["WORK_DIR"], cfg["REG_DIR"]
 TISSUE_TAGS = (1, 2)
 WHOLE_BRAIN = "WholeBrain"
-# model -> (sim-dir token, mesh-field suffix)
-MODEL_TOKENS = {"ISO": ("ISO", "scalar"), "DTI": ("DTI", "vn"), "MD-dMRI": ("MD_dMRI", "vn")}
-MODELS = list(MODEL_TOKENS)
 # Tier-3 midbrain nuclei: overlap-allowed, E-field-only, sampled as SEPARATE binary masks
 # (never an int-label / winner-take-all volume). Cluster build output; absent on dev machines.
 TIER3_DIR = os.path.join(REG, "atlas_rois", "tier3")
@@ -72,15 +70,6 @@ def mask_select(bary_world, mask, mask_affine):
     return out
 
 
-def sim_mesh(montage, model, subject):
-    token, suf = MODEL_TOKENS[model]
-    for d in (f"sim_{montage}_{token}", f"sim_{token}"):     # montage-aware, then legacy M1
-        p = os.path.join(WDIR, d, f"{subject}_TDCS_1_{suf}.msh")
-        if os.path.exists(p):
-            return p
-    return None
-
-
 def roi_stats(roi, tag, e):
     if not roi.any():
         return dict(n=0, n_wm=0, n_gm=0, median=np.nan, p95=np.nan)
@@ -110,7 +99,7 @@ def main():
 
     results = {}
     for model in MODELS:
-        p = sim_mesh(args.montage, model, args.subject)
+        p = sim_mesh(WDIR, args.montage, model, args.subject)
         if p is None:
             print(f"  [{model}/{args.montage}] mesh not found — SKIPPING")
             results[model] = None

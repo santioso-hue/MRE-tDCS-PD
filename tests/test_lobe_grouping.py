@@ -2,8 +2,8 @@
 test_lobe_grouping.py — validate the recon-all ROI label schemes without recon-all data.
 
 Checks the DK->lobe mapping is a clean partition (no overlap, insula and CC excluded) and that
-assemble_labels (build_rois_freesurfer) places cortical lobes, real-wmparc WM lobes, CC, aseg
-subcortical, and the Iglesias brainstem substructures at the right ids.
+assemble_labels (build_rois) places cortical lobes, real-wmparc WM lobes, CC, aseg subcortical,
+and the Iglesias brainstem substructures at the right ids.
 
 Usage:  conda run -n neuro python tests/test_lobe_grouping.py
 """
@@ -11,8 +11,7 @@ import os, sys
 import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "analysis"))
-from build_rois import LOBE_IDX, LOBE_ID, WM_OFFSET, CC_ID  # noqa: E402
-from build_rois_freesurfer import assemble_labels           # noqa: E402
+from build_rois import LOBE_IDX, LOBE_ID, WM_OFFSET, CC_ID, assemble_labels  # noqa: E402
 
 checks = []
 def ck(name, ok, detail=""):

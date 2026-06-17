@@ -8,13 +8,15 @@
 #       dwi2cond [options] <subID> <DWI> <bval> <bvec>
 #   and it is mapped correctly internally (BVALS=$3 → DWIbvals, BVECS=$4 → DWIbvecs).
 #   `dwi2cond --all` runs cleanly on FullPD5 and IS the SimNIBS-standard, validated path:
-#       eddy_correct  →  dtifit  →  nonlinear fnirt (FA→T1)  →  vecreg (tensor reorientation)
-#       →  brain-mask.
-#   The original failure was a mis-ordered manual call, not a tool bug. dwi2cond's nonlinear
-#   FA→T1 registration is more accurate than the previous 6-DOF rigid bypass; its principal
-#   eigenvector agrees with the QTI dps.u to ~22° median in core WM (FA>0.5), ~30° across all WM
-#   — see tests/validate_mean_tensor.py. (Separate sDTI acquisition, so this is a moderate, not
-#   tight, agreement.)
+#       eddy_correct  →  dtifit  →  FA→T1 registration  →  vecreg (tensor reorientation)  →  brain-mask.
+#   The original failure was a mis-ordered manual call, not a tool bug.
+#
+# REGISTRATION CLASS (decided with the MD-dMRI bake-off, 2026-06-16): the cohort MD-dMRI arm registers by
+# an S0-driven AFFINE, because fnirt over-warps the Synb0+topup-corrected data (~5 mm). For the
+# DTI↔MD-dMRI E-field contrast to isolate the tensor and not the registration, the DTI arm must register
+# the same affine class — so we pass `-r 12dof` (affine FA→T1) instead of dwi2cond's nonlinear default.
+# TODO (when the separate ParkMRE_DTI scan arrives — the arm is gated on Rodrigo): consider the tighter
+# match of fitting the tensor with dwi2cond and re-registering it with the MD-dMRI S0-affine (02).
 #
 # Prerequisites: CHARM has run (m2m_${SUBJECT}/ exists).
 # Idempotent:    skips if the coregistered tensor already exists.
@@ -62,10 +64,10 @@ cd "$WORK_DIR"
 # Remove any locked/partial prep from an interrupted run (avoids permission errors)
 rm -rf "$M2M/dMRI_prep"
 
-# Standard SimNIBS DTI preparation
-# Argument order: subID DWI bval bvec  (verified correct against dwi2cond source)
-echo "Running dwi2cond --all (eddy + dtifit + fnirt FA→T1 + vecreg + mask)..."
-dwi2cond --all "$SUBJECT" "$DWI" "$BVAL" "$BVEC"
+# Standard SimNIBS DTI preparation. -r 12dof = affine FA→T1, matching the MD-dMRI arm's affine class
+# (see the registration-class note above). Argument order subID DWI bval bvec (verified vs dwi2cond source).
+echo "Running dwi2cond --all -r 12dof (eddy + dtifit + affine FA→T1 + vecreg + mask)..."
+dwi2cond --all -r 12dof "$SUBJECT" "$DWI" "$BVAL" "$BVEC"
 
 echo ""
 echo "dwi2cond complete."

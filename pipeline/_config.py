@@ -12,7 +12,9 @@ import os
 import subprocess
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_CONFIG_SH = os.path.join(_ROOT, "config", "config.sh")
+# Default to config/config.sh; allow an override via PIPELINE_CONFIG so multiple subjects /
+# the cohort batch can each point at their own config without clobbering config/config.sh.
+_CONFIG_SH = os.environ.get("PIPELINE_CONFIG") or os.path.join(_ROOT, "config", "config.sh")
 
 
 def load_config(path=_CONFIG_SH):
@@ -23,7 +25,7 @@ def load_config(path=_CONFIG_SH):
         )
     keys = ("SUBJECT DATA_DIR WORK_DIR NII_DIR FIT_DIR M2M_DIR REG_DIR "
             "DWI_NII DWI_BVAL DWI_BVEC STE_B0_NII QTI_MFS QTI_DPS SIMNIBS_BIN FSLDIR "
-            "MRE_STIFFNESS MRE_STORAGE MRE_LOSS MRE_CONFIDENCE").split()
+            "MRE_STIFFNESS MRE_ALPHA MRE_STORAGE MRE_LOSS MRE_CONFIDENCE").split()
     script = f'set -a; source "{path}"; ' + "; ".join(f'echo "${k}"' for k in keys)
     out = subprocess.check_output(["bash", "-c", script], text=True).splitlines()
     return dict(zip(keys, out))

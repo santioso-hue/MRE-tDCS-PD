@@ -25,14 +25,16 @@ kurtosis-biased estimate of the same macroscopic tensor than the single-shell DT
 [pipeline/conductivity_models_derivation.md](pipeline/conductivity_models_derivation.md) for the
 theory, the mapping, and limitations.
 
-Regions of interest (cortical and white-matter lobes, corpus callosum, whole brain) are derived
-locally with [FastSurfer](https://github.com/Deep-MI/FastSurfer) and brought into the mesh space;
-subcortical nuclei and brainstem come from the CIT168/Pauli and Iglesias atlases.
+Regions of interest (cortical and white-matter lobes, corpus callosum, brainstem substructures,
+subcortical nuclei) are derived from a [FreeSurfer](https://surfer.nmr.mgh.harvard.edu/) `recon-all`
+parcellation (matching Olsson et al. 2025) and brought into the mesh space; the fine midbrain nuclei
+(SNc/SNr/VTA/RN/STN) come from the CIT168/Pauli atlas. `recon-all` is run on the cluster when needed.
 
 ## Setup
 
-1. Install [FSL](https://fsl.fmrib.ox.ac.uk/) (≥ 6.0), [SimNIBS](https://simnibs.github.io/simnibs/)
-   (4.6), and, for the ROIs, [FastSurfer](https://github.com/Deep-MI/FastSurfer).
+1. Install [FSL](https://fsl.fmrib.ox.ac.uk/) (≥ 6.0) and [SimNIBS](https://simnibs.github.io/simnibs/)
+   (4.6). ROIs are built from a [FreeSurfer](https://surfer.nmr.mgh.harvard.edu/) `recon-all`
+   parcellation (`recon-all` + `-brainstem-structures`, run on the cluster).
 2. Copy the config template and edit it for your machine and subject:
 
    ```bash
@@ -55,7 +57,7 @@ FIT_DIR=$FIT_DIR MDDMRI_DIR=/path/to/md-dmri matlab -batch "run('pipeline/run_qt
 bash           pipeline/02_register_dmri_to_T1.sh                          # QTI <D> -> T1 (mesh) space
 simnibs_python pipeline/03_build_conductivity_tensor.py                    # MD-dMRI tensor (sigma ~ <D>)
 simnibs_python pipeline/04_run_simulations.py                             # ISO + DTI + MD-dMRI FEM
-simnibs_python analysis/build_rois.py --fs_dir <fastsurfer_out>/$SUBJECT   # ROI masks in mesh space
+simnibs_python analysis/build_rois.py --fs_dir <recon-all_subject_dir>             # ROI masks in mesh space (recon-all)
 simnibs_python analysis/04_extract_roi_efield.py                          # per-ROI E-field table
 ```
 
@@ -74,7 +76,8 @@ config/    config.example.sh (template), charm_highquality.ini
 pipeline/  00_charm, 01_dwi2cond, run_qti_cov.m (QTI covariance fit, MATLAB), 02_register_dmri_to_T1,
            03_build_conductivity_tensor, 04_run_simulations, 05_register_mre_to_T1,
            prepare_dmri_tensor.py (called by 02), _config.py, conductivity_models_derivation.md (methods)
-analysis/  build_rois, extract_roi_efield, mre_efield_comparison, compare_sims, qc_harness
+analysis/  build_rois (recon-all ROIs), _rois (ROI resolver), extract_roi_efield,
+           mre_efield_comparison, compare_sims, qc_harness
 docs/      references
 tests/     mean-tensor reconstruction + QC-harness checks
 ```

@@ -1,44 +1,52 @@
 #!/bin/bash
-# 05_register_mre_to_T1.sh — Bring MRE mechanical maps into T1 space for the
-# post-hoc cross-modal comparison (mechanics vs MD-dMRI microstructure / E-field).
+# 05_register_mre_to_T1.sh — bring the MRE mechanical maps into charm/mesh T1 space for the post-hoc
+# cross-modal comparison (mechanics vs MD-dMRI microstructure / E-field).
 #
-# MRE is acquired in its own low-resolution space (here 1.5x1.5x3 mm). We rigidly
-# register the stiffness map (which carries tissue contrast) to the structural T1
-# and apply the same transform to the storage/loss moduli and confidence maps.
+# Cohort MRE (stiffness + alpha) is delivered ALREADY in the FreeSurfer-conformed T1 (256^3, "_ToT1"),
+# the same grid as recon-all's orig.mgz. So this resamples it to the charm/mesh T1 via the orig->charm
+# rigid affine -- the identical transform analysis/build_rois.py uses to place the ROIs -- so the MRE
+# maps, the ROIs, and the E-field all live in one space. (No raw-MRE->T1 registration is needed; the
+# upstream pipeline already did MRE->T1.)
 #
-# NOTE: a dedicated MRE magnitude/T2*-EPI image, if available, is a better
-# registration source than the stiffness map. Swap MRE_REF below if you have one.
-#
-# Prerequisites: CHARM (m2m_${SUBJECT}/T1.nii.gz). Reads paths from config/config.sh.
-# Output: registration/mre_{stiffness,storage,loss,confidence}_T1.nii.gz
+# Usage:   PIPELINE_CONFIG=<subject config.sh> bash pipeline/05_register_mre_to_T1.sh
+# Output:  registration/mre_stiffness_T1.nii.gz, mre_alpha_T1.nii.gz   (charm T1 space)
 
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/../config/config.sh"
+CFG="${PIPELINE_CONFIG:-$SCRIPT_DIR/../config/config.sh}"
+[ -f "$CFG" ] || { echo "ERROR: config not found: $CFG (set PIPELINE_CONFIG)"; exit 1; }
+CFG="$(cd "$(dirname "$CFG")" && pwd)/$(basename "$CFG")"
+# shellcheck disable=SC1090
+source "$CFG"
 export FSLDIR
 export PATH="$SIMNIBS_BIN:$FSLDIR/bin:$PATH"
 export FSLOUTPUTTYPE=NIFTI_GZ
 
+require_nonzero() {
+    local f="$1"
+    [ -f "$f" ] || { echo "ERROR: expected output missing: $f"; exit 1; }
+    local nz; nz="$(fslstats "$f" -V | awk '{print $1}')"
+    [ "${nz:-0}" -gt 0 ] 2>/dev/null || { echo "ERROR: $f has 0 non-zero voxels"; exit 1; }
+}
+
 T1_REF="$M2M_DIR/T1.nii.gz"
-MRE_REF="$MRE_STIFFNESS"      # registration source (swap for an MRE magnitude if available)
+ORIG="$DATA_DIR/recon/mri/orig.mgz"           # recon-all orig = the FS-conformed grid the MRE maps live on
+for f in "$T1_REF" "$ORIG" "$MRE_STIFFNESS" "$MRE_ALPHA"; do
+    [ -f "$f" ] || { echo "ERROR: required input missing: $f"; exit 1; }
+done
 mkdir -p "$REG_DIR"; cd "$REG_DIR"
 
-[ -f "$T1_REF" ] || { echo "ERROR: $T1_REF not found (run CHARM first)."; exit 1; }
-[ -f "$MRE_REF" ] || { echo "ERROR: $MRE_REF not found (check MRE_* in config)."; exit 1; }
+echo "=== FS-conformed T1 -> charm T1 affine (orig.mgz, 6-DOF MI; same transform build_rois uses) ==="
+"$SIMNIBS_BIN/simnibs_python" -c "import nibabel as nib; nib.save(nib.load('$ORIG'), 'orig_fs.nii.gz')"
+flirt -in orig_fs.nii.gz -ref "$T1_REF" -omat fs_to_charm.mat -dof 6 -cost mutualinfo \
+      -searchrx -25 25 -searchry -25 25 -searchrz -25 25 -interp trilinear
+[ -s fs_to_charm.mat ] || { echo "ERROR: orig->charm flirt failed"; exit 1; }
 
-echo "=== Register MRE stiffness -> T1 (6-DOF, mutual information) ==="
-flirt -in "$MRE_REF" -ref "$T1_REF" -out mre_stiffness_T1.nii.gz \
-      -omat mre_to_T1.mat -dof 6 -cost mutualinfo \
-      -searchrx -30 30 -searchry -30 30 -searchrz -30 30 -interp trilinear
-echo "  transform: mre_to_T1.mat   (VISUALLY CHECK mre_stiffness_T1 vs T1 in FSLeyes)"
+echo "=== resample MRE stiffness + alpha (his FS-T1 grid) into charm T1 ==="
+flirt -in "$MRE_STIFFNESS" -ref "$T1_REF" -applyxfm -init fs_to_charm.mat -interp trilinear -out mre_stiffness_T1.nii.gz
+flirt -in "$MRE_ALPHA"     -ref "$T1_REF" -applyxfm -init fs_to_charm.mat -interp trilinear -out mre_alpha_T1.nii.gz
+require_nonzero mre_stiffness_T1.nii.gz
+require_nonzero mre_alpha_T1.nii.gz
+rm -f orig_fs.nii.gz
 
-echo "=== Apply transform to storage / loss / confidence ==="
-for pair in "MRE_STORAGE mre_storage_T1" "MRE_LOSS mre_loss_T1" "MRE_CONFIDENCE mre_confidence_T1"; do
-  set -- $pair; src="${!1}"; out="$2"
-  if [ -f "$src" ]; then
-    flirt -in "$src" -ref "$T1_REF" -out "${out}.nii.gz" \
-          -applyxfm -init mre_to_T1.mat -interp trilinear
-    echo "  $out.nii.gz"
-  fi
-done
-echo "Done. Next: simnibs_python analysis/05_mre_efield_comparison.py"
+echo "Done -> registration/mre_{stiffness,alpha}_T1.nii.gz. Next: simnibs_python analysis/05_mre_efield_comparison.py"

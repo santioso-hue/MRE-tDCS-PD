@@ -38,12 +38,12 @@ import numpy as np
 import nibabel as nib
 
 WDIR = cfg["WORK_DIR"]
-RDIR = os.path.join(WDIR, "registration")
+RDIR = cfg["REG_DIR"]   # the T1-space maps written by 02_register_dmri_to_T1.sh
 M2M  = cfg["M2M_DIR"]
 EPS  = 1e-3   # min eigenvalue, µm²/ms (VN-safe)
 
 # The single MD-dMRI model: plain QTI mean tensor ⟨D⟩, mapped by SimNIBS 'vn'.
-# eigenvalue scalar maps (magnitude) + reoriented tensor frame (in-plane orientation), both from 01d.
+# eigenvalue scalar maps (magnitude) + reoriented tensor frame (in-plane orientation), both from 02.
 lam_fmt    = "lam{}_T1"
 frame_name = "tensor_triaxial_T1.nii.gz"
 out_name   = "tensor_MD_dMRI.nii.gz"
@@ -121,15 +121,16 @@ out[idx[:, 0], idx[:, 1], idx[:, 2], 5] = Dt[:, 2, 2]
 ratio = l1 / np.maximum(l3, 1e-6)
 print(f"\nAnisotropy λ1/λ3 (covered brain): median={np.median(ratio):.3f}, p95={np.percentile(ratio,95):.3f}")
 print(f"  > 8 (VN cap): {100*np.mean(ratio>8):.2f}%")
-v1ref = nib.load(os.path.join(RDIR, "v1_T1.nii.gz")).get_fdata()
-nref = np.linalg.norm(v1ref, axis=-1)
-mref = nref[idx[:, 0], idx[:, 1], idx[:, 2]] > 0.5
-vr = v1ref[idx[mref, 0], idx[mref, 1], idx[mref, 2]]
-vr = vr / np.linalg.norm(vr, axis=1)[:, None]
-ang = np.degrees(np.arccos(np.clip(np.abs(np.sum(v1[mref]*vr, 1)), 0, 1)))
-print(f"Principal eigenvector vs validated v1_T1: median={np.median(ang):.2f}°, within15°={np.mean(ang<15)*100:.1f}%")
+# Cross-check the two INDEPENDENT reorientation paths: the v1_T1 anchor (vecreg of v1_dMRI) vs the
+# principal axis of the vecreg-reoriented tensor (evec[:,:,2]). They are reoriented separately, so their
+# agreement is a real test that reorientation held (comparing v1 to v1_T1 would be a tautology — v1 IS the
+# anchor). Restrict to voxels where the anchor was actually used, not the degenerate fallback (which set
+# v1 = evec[:,:,2] and would agree trivially).
+tensor_axis = evec[valid_ref, :, 2]
+ang = np.degrees(np.arccos(np.clip(np.abs(np.sum(v1[valid_ref] * tensor_axis, axis=1)), 0, 1)))
+print(f"v1_T1 anchor vs independent tensor-frame axis: median={np.median(ang):.2f}°, within15°={np.mean(ang<15)*100:.1f}%")
 assert np.isfinite(out[idx[:, 0], idx[:, 1], idx[:, 2]]).all(), "non-finite values in the conductivity tensor"
-assert np.mean(ang < 15) > 0.9, "principal axis disagrees with v1_T1 in >10% of WM — anchoring/registration broke"
+assert np.mean(ang < 15) > 0.9, "v1_T1 anchor disagrees with the tensor-frame principal axis in >10% of WM — reorientation broke"
 
 out_path = os.path.join(WDIR, out_name)
 hdr = timg.header.copy(); hdr.set_data_shape(out.shape); hdr.set_data_dtype(np.float32)

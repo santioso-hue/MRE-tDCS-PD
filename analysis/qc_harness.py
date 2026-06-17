@@ -21,6 +21,8 @@ import nibabel as nib
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "pipeline"))
 from _config import cfg  # noqa: E402
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _sims import sim_mesh, MODELS  # noqa: E402  (shared montage-aware mesh lookup)
 
 # thresholds
 # Absolute thresholds are STARTING POINTS calibrated on the pilot (n=1). Items marked [PROV] are
@@ -35,6 +37,7 @@ THR = dict(
     cc_fa_min=0.45, csf_fa_max=0.25,                 # dwi2cond
     reg_containment_min=0.95,                        # dMRI FOV covers brain (gross misreg / cutoff)
     cc_v1x_min=0.6,                                  # [PROV] CC V1 left-right (tensor reorientation)
+    peduncle_siz_min=0.55,                           # [PROV] cerebral-peduncle V1 superior-inferior in the SimNIBS frame
     reg_grad_corr_min=0.08,                          # [PROV] b0<->T1 edge alignment (mid-range shift)
     geom_mean_tol=0.01,                              # vn reconstruction must land on sigma0 within 1%
     efield_p95_range=(0.10, 0.60), efield_spike=5.0, # 03: p95 |E| range; max/p95 spike
@@ -55,10 +58,9 @@ def _data(p):
 
 
 def _roi_dir(reg):
-    """Tier-1 ROI dir: recon-all parcellation (freesurfer_rois) if built, else the FastSurfer
-    pilot build (fastsurfer_rois). Mirrors analysis/_rois.load_labeled so QC reads the same masks."""
-    fr = os.path.join(reg, "freesurfer_rois")
-    return fr if os.path.exists(os.path.join(fr, "roi_labels_meshspace.nii.gz")) else os.path.join(reg, "fastsurfer_rois")
+    """Tier-1 ROI dir: the recon-all parcellation (freesurfer_rois) built by analysis/build_rois.py.
+    Mirrors analysis/_rois.load_labeled so QC reads the same masks."""
+    return os.path.join(reg, "freesurfer_rois")
 
 
 def _eigs_masked(t, sel):
@@ -204,6 +206,23 @@ def qc_register(P):
             m["reg_cc_v1x"] = round(float(np.median(v1x)), 3)   # median: robust to CC-edge partial volume
             if np.median(v1x) < THR["cc_v1x_min"]:
                 f.append("register:cc_not_LR")   # tensor reorientation failed
+    # (2b) cerebral-peduncle reorientation in the SimNIBS frame. CC V1x above is voxel-frame and the CC
+    # L-R signal is resolution-limited at 2.5 mm; the peduncle is a thick coherent S-I tract and is the
+    # reliable orientation gate. SimNIBS rotates the tensor by M = colnorm(affine).diag(-1,1,1 if det>0)
+    # (cond_utils.cond2elmdata) before the FEM, so we score M@v1 against world-z (superior-inferior).
+    ped = _data(os.path.join(_roi_dir(P["reg"]), "roi_Mesencephalon.nii.gz"))
+    if v1 is not None and ped is not None and (ped > 0).any():
+        aff = nib.load(os.path.join(P["reg"], "v1_T1.nii.gz")).affine[:3, :3]
+        M = aff / np.linalg.norm(aff, axis=0)[:, None]
+        if np.linalg.det(M) > 0:
+            M = M.dot(np.diag([-1.0, 1.0, 1.0]))
+        vw = v1[ped > 0] @ M.T
+        nrm = np.linalg.norm(vw, axis=1); ok = nrm > 1e-6
+        if ok.any():
+            siz = np.abs(vw[ok, 2]) / nrm[ok]
+            m["reg_peduncle_siz"] = round(float(np.median(siz)), 3)
+            if np.median(siz) < THR["peduncle_siz_min"]:
+                f.append("register:peduncle_not_SI")   # reorientation / registration off
     # (3) edge alignment — gradient-magnitude correlation of the registered b0 vs T1 inside the brain.
     # Containment catches gross cutoff and CC-V1 catches tensor rotation, but NEITHER catches a few-mm
     # rigid shift that still covers the brain. A shift misaligns tissue boundaries, so |grad| correlation
@@ -211,7 +230,7 @@ def qc_register(P):
     # near the information floor and barely moves under a shift, so it is NOT used.)
     try:
         from scipy import ndimage
-        b0 = _data(os.path.join(P["reg"], "b0_spherical_T1.nii.gz"))
+        b0 = _data(os.path.join(P["reg"], "s0_T1.nii.gz"))   # registered dMRI S0 in T1 space
         t1 = _data(os.path.join(P["m2m"], "T1.nii.gz"))
         if b0 is not None and t1 is not None:
             inner = ndimage.binary_erosion(brain, iterations=2)   # interior: avoid the mask boundary itself
@@ -296,11 +315,11 @@ def qc_sims(P):
         from simnibs import mesh_io
     except Exception:
         f.append("sims:no_simnibs"); return m, f
-    models = {"ISO": ("sim_ISO", "scalar"), "DTI": ("sim_DTI", "vn"),
-              "MDdMRI": ("sim_MD_dMRI", "vn")}
-    for mod, (d, kind) in models.items():
-        mp = os.path.join(P["work"], d, f"{P['id']}_TDCS_1_{kind}.msh")
-        if not os.path.exists(mp):
+    montage = P.get("montage", "M1")
+    for model in MODELS:                       # ISO, DTI, MD-dMRI
+        mod = model.replace("-", "")           # metric label: ISO / DTI / MDdMRI
+        mp = sim_mesh(P["work"], montage, model, P["id"])
+        if not mp:
             f.append(f"sims:{mod}_missing"); continue
         msh = mesh_io.read_msh(mp)
         gm = (msh.elm.tag1 == 2)
@@ -413,6 +432,7 @@ def _calibrate(out):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--cohort"); ap.add_argument("--out", default="analysis/qc")
+    ap.add_argument("--montage", default="M1", help="which montage's sims to QC (default M1)")
     ap.add_argument("--calibrate", action="store_true",
                     help="read out/qc_summary.csv and suggest cohort-percentile thresholds, then exit")
     args = ap.parse_args()
@@ -426,6 +446,7 @@ def main():
         P.setdefault("reg", os.path.join(P["work"], "registration"))
         P.setdefault("samseg", os.path.join(P["m2m"], "segmentation", "labeling.nii.gz"))
         P.setdefault("cc_mask", os.path.join(_roi_dir(P["reg"]), "roi_CC.nii.gz"))
+        P.setdefault("montage", args.montage)
         row = {"subject": P["id"]}; flags_by_stage = {}
         for stage_name, fn in STAGES:
             try:
@@ -489,7 +510,7 @@ def _overlay_png(P, png_dir):
     t1 = _data(os.path.join(P["m2m"], "T1.nii.gz"))
     if t1 is None:
         return
-    lab = _data(os.path.join(_roi_dir(P["reg"]), "roi_labels_meshspace.nii.gz"))  # recon-all (or FastSurfer fallback) ROI labels
+    lab = _data(os.path.join(_roi_dir(P["reg"]), "roi_labels_meshspace.nii.gz"))  # recon-all ROI labels
     # center the three slices on the ROI-label centroid so small ROIs (CC, mesencephalon) are in-plane
     if lab is not None and (lab > 0).any():
         ci, cj, ck = (int(round(c)) for c in np.array(np.where(lab > 0)).mean(axis=1))

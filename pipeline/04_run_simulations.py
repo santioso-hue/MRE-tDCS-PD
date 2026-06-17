@@ -82,6 +82,7 @@ def run(montage_name, model_name):
     pathfem = f"sim_{montage_name}_{model_name.replace('-', '_')}"   # token matches 04_extract lookup
     print("=" * 60); print(f"MONTAGE {montage_name}  x  MODEL {model_name}  ->  {pathfem}"); print("=" * 60)
     s = simnibs.sim_struct.SESSION(); s.subpath = SUBPATH; s.pathfem = pathfem
+    s.open_in_gmsh = False                             # headless/batch: never auto-open GMSH (it hangs without a display)
     if tensor is not None:
         if not os.path.exists(tensor):
             return FileNotFoundError(f"{tensor} not found — run 03_build_conductivity_tensor.py")

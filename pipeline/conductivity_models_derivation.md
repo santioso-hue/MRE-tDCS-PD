@@ -116,9 +116,12 @@ white-matter anisotropy (Suh, Lee & Kim 2012, Phys Med Biol 57:6961).
 The md-dmri toolbox keeps analysis in native diffusion space (its motion/eddy correction, the Elastix
 `AffineDTITransform`, is already applied upstream; the fit runs on the corrected series). A FEM head
 model needs the conductivity tensor on the 1 mm T1/mesh grid, so we bring ⟨D⟩ to T1 — the
-SimNIBS-standard direction. We use **nonlinear fnirt of FA(⟨D⟩) → T1**, identical to dwi2cond's DTI
-path (`regmthd=nonl`): both anisotropic arms register the same way, so the only DTI↔MD-dMRI difference
-is the tensor, not the registration. fnirt also corrects the EPI distortion a rigid map leaves — on the
+SimNIBS-standard direction. The registration *class* depends on whether the dMRI is EPI-distortion-
+corrected (see the distortion-correction caveat at the end of this section): the **pilot** (no topup)
+uses **nonlinear fnirt of FA(⟨D⟩) → T1**, identical to dwi2cond's DTI path (`regmthd=nonl`) so both
+anisotropic arms register the same way and the only DTI↔MD-dMRI difference is the tensor; the
+Synb0+topup-corrected **cohort** uses an affine FA(⟨D⟩) → T1. The fnirt description below is the pilot
+path. fnirt also corrects the EPI distortion a rigid map leaves — on the
 QTI tensor the principal axis agrees with the independent dwi2cond DTI V1 to **8.4°** (core WM) under
 fnirt versus **20.2°** under rigid b0, at equal GM+WM coverage. (An earlier staged test had favoured
 rigid, but it was run on the now-dropped full-DTD tensor and scored on a coarse brain-coverage Dice;
@@ -140,24 +143,33 @@ partial-volume blurring the 2.5 mm resolution incurs (a disclosed trade-off). Wi
 the MD-dMRI and DTI arms now use the *same* registration path, so registration no longer confounds
 their E-field contrast.
 
-**Distortion-correction caveat.** The gold-standard EPI-distortion correction is FSL `topup` with a
-reverse-phase-encode b=0, after which a *rigid* dMRI→T1 coregistration suffices — this is what the
-SimNIBS team does (Mosayebi-Samani et al. 2025). Our acquisition has no reverse-PE volume, so `topup`
-is not available; nonlinear fnirt FA→T1 is then the `dwi2cond`-default substitute (it absorbs the
-distortion into the warp, at the cost of conflating it with anatomy). The DTI arm (`dwi2cond --all`,
-`regmthd=nonl`) already does exactly this, so matching the MD-dMRI arm to fnirt is the consistent choice
-for distortion-uncorrected data. Acquiring a reverse-PE b=0 in the cohort would let both arms move to
-the preferred topup+rigid path.
+**Distortion correction governs the registration choice — and it differs between the pilot and the
+cohort.** The gold-standard EPI-distortion correction is FSL `topup` with a reverse-phase-encode b=0,
+after which a *rigid/affine* dMRI→T1 coregistration suffices — this is what the SimNIBS team does
+(Mosayebi-Samani et al. 2025). The **pilot** acquisition has no reverse-PE volume, so `topup` is not
+available; the fnirt FA→T1 path above is the `dwi2cond`-default substitute (it absorbs the residual
+distortion into the warp, at the cost of conflating it with anatomy), and matches the DTI arm
+(`dwi2cond --all`, `regmthd=nonl`) so registration does not confound the contrast. The **cohort** is
+already distortion-corrected upstream (Synb0 synthetic reverse-PE + `topup` + eddy), so the distortion
+fnirt would absorb is gone; per the SimNIBS-preferred logic an **affine dMRI→T1** is the right class
+there, and over-warping with fnirt would risk re-introducing spurious deformation. The registration
+class is therefore chosen per data regime and **validated per subject** by orientation scoring (the
+warped ⟨D⟩ principal axis against anatomy — corpus callosum left–right, cerebral peduncle
+superior–inferior — and against the delivered scalar references), rather than assumed.
 
 ## ROI definition
 
-E-field and microstructure are read out over the FastSurfer-derived ROI masks in mesh space
-(`analysis/build_rois.py` -> `registration/fastsurfer_rois/`, loaded by the analysis scripts through
-`analysis/_rois.py`): cortical and white-matter lobes (DKT grouped to frontal/parietal/temporal/
-occipital), corpus callosum, and the aseg subcortical structures (thalamus, caudate, putamen,
-pallidum, accumbens, hippocampus, amygdala, brainstem), plus a whole-brain GM+WM mask. FastSurfer is
-run seg-only (deep-learning, license-free); its conformed segmentation is registered to the charm T1
-(FLIRT 6-DOF rigid) so the masks land in the FEM/E-field space. The fine midbrain nuclei
+E-field and microstructure are read out over ROI masks in mesh space built from a FreeSurfer
+`recon-all` parcellation (`analysis/build_rois.py` -> `registration/freesurfer_rois/`, loaded by the
+analysis scripts through `analysis/_rois.py`): cortical and white-matter lobes (Desikan grouped to
+frontal/parietal/temporal/occipital, WM from the real wmparc), corpus callosum, the aseg subcortical
+structures (thalamus, caudate, putamen, pallidum, accumbens, hippocampus, amygdala), and the
+mesencephalon/pons split from the Iglesias 2015 brainstem subsegmentation. Whole-brain GM+WM is taken
+from the charm tissue tags downstream. This matches Olsson et al. 2025, which used FreeSurfer 7.2 for
+the same structures; the cohort ships `recon-all` pre-computed and the pilot's ran on the cluster, so
+the parcellation is consumed directly (`recon-all` is run on the cluster whenever a new subject needs
+it). The recon-all segmentation is registered to the charm T1 (FLIRT 6-DOF rigid) so the masks land in
+the FEM/E-field space. The fine midbrain nuclei
 (SNc/SNr/VTA/RN/STN), below aseg resolution, come from the CIT168/Pauli 2017 atlas warped via ANTs
 (`analysis/07_build_tier3_nuclei.sh`) and merge into the ROI set when needed. Each ROI is sampled over
 every GM/WM element it contains, not a fixed-radius sphere.

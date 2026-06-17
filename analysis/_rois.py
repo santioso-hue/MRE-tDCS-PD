@@ -1,11 +1,9 @@
 """_rois.py — Shared ROI loading + sampling for the analysis scripts.
 
-The ROIs are int-label masks in mesh space. The primary source is the recon-all parcellation
-(cohort-definitive, built by analysis/build_rois_freesurfer.py):
+The ROIs are int-label masks in mesh space, built from the recon-all parcellation by
+analysis/build_rois.py:
   registration/freesurfer_rois/roi_labels_meshspace.nii.gz   int labels on the charm/mesh grid
   registration/freesurfer_rois/rois.json                     {label: name}
-The FastSurfer pilot build (registration/fastsurfer_rois/, same two filenames) is used as a
-fallback when the recon-all output is not present.
 Coverage: cortical and white-matter lobes, corpus callosum, and the aseg subcortical structures
 (thalamus, caudate, putamen, pallidum, accumbens, hippocampus, amygdala, and the brainstem split
 into Mesencephalon + Pons).
@@ -19,13 +17,15 @@ import nibabel as nib
 
 
 def load_labeled(reg_dir):
-    """Return (labeled int array, affine, {label:name}) in subject/mesh T1 space.
-    Prefers the recon-all parcellation (freesurfer_rois, cohort-definitive); falls back to the
-    FastSurfer pilot build (fastsurfer_rois) when recon-all output is not present."""
+    """Return (labeled int array, affine, {label:name}) in subject/mesh T1 space, from the
+    recon-all parcellation (freesurfer_rois) built by analysis/build_rois.py."""
     fr = os.path.join(reg_dir, "freesurfer_rois")
-    if not os.path.exists(os.path.join(fr, "roi_labels_meshspace.nii.gz")):
-        fr = os.path.join(reg_dir, "fastsurfer_rois")
-    img = nib.load(os.path.join(fr, "roi_labels_meshspace.nii.gz"))
+    lab_fn = os.path.join(fr, "roi_labels_meshspace.nii.gz")
+    if not os.path.exists(lab_fn):
+        raise FileNotFoundError(
+            f"{lab_fn} not found. Build the recon-all ROIs first: "
+            "simnibs_python analysis/build_rois.py --fs_dir <recon-all subject dir>")
+    img = nib.load(lab_fn)
     with open(os.path.join(fr, "rois.json")) as f:
         names = {int(k): v for k, v in json.load(f).items()}
     return np.asarray(img.dataobj).astype(int), img.affine, names

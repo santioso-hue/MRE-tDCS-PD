@@ -13,19 +13,21 @@ Outputs: analysis/sim_compare/  (NIfTIs + PNGs + the console table below)
 """
 import os
 import sys
-import glob
+import argparse
 import numpy as np
 import nibabel as nib
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "pipeline"))
 from _config import cfg  # noqa: E402
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _sims import MODELS, sim_mesh  # noqa: E402  (shared montage-aware mesh lookup)
 from simnibs import mesh_io  # noqa: E402
 
+_ap = argparse.ArgumentParser(); _ap.add_argument("--montage", default="M1")
+MONTAGE = _ap.parse_args().montage
 WDIR = cfg["WORK_DIR"]; M2M = cfg["M2M_DIR"]; SUBJ = cfg["SUBJECT"]
-OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sim_compare")
+OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sim_compare", SUBJ)   # per-subject
 os.makedirs(OUT, exist_ok=True)
-
-MODELS = [("ISO", "sim_ISO", "scalar"), ("DTI", "sim_DTI", "vn"), ("MD-dMRI", "sim_MD_dMRI", "vn")]
 EFIELD_P95 = (0.10, 0.60)   # physiological GM |E| band at 2 mA (V/m)
 SPIKE_MAX = 5.0             # max/p95 — guards against a single hot mesh element
 
@@ -35,9 +37,9 @@ seg = np.asarray(nib.load(os.path.join(M2M, "segmentation", "labeling.nii.gz")).
 brain = np.isin(seg, [2, 41, 3, 42])    # cerebral GM+WM — the region where |E| is meaningful
 
 
-def load_mesh(d, kind):
-    g = glob.glob(os.path.join(WDIR, d, f"{SUBJ}_TDCS_1_{kind}.msh"))
-    return mesh_io.read_msh(g[0]) if g else None
+def load_mesh(name):
+    p = sim_mesh(WDIR, MONTAGE, name, SUBJ)
+    return mesh_io.read_msh(p) if p else None
 
 
 def stats(v):
@@ -47,8 +49,8 @@ def stats(v):
 
 # per-model: stats, validation, and magnE interpolated to the T1 grid
 rows, vols = {}, {}
-for name, d, kind in MODELS:
-    msh = load_mesh(d, kind)
+for name in MODELS:
+    msh = load_mesh(name)
     if msh is None:
         print(f"  {name}: mesh missing -> skipped"); continue
     E = msh.field["magnE"].value
@@ -68,7 +70,7 @@ for name, d, kind in MODELS:
 # comparison + validation table
 print("\n=== Per-model |E| (V/m), tissue-level (no ROIs) ===")
 print(f"{'model':9s}{'GM mean':>9s}{'GM med':>8s}{'GM p95':>8s}{'GM max':>8s}{'WM p95':>8s}{'spike':>7s}   valid")
-for name, _, _ in MODELS:
+for name in MODELS:
     if name not in rows:
         continue
     r = rows[name]
@@ -97,7 +99,7 @@ try:
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     ci, cj, ck = (int(round(c)) for c in np.array(np.where(brain)).mean(axis=1))   # brain-centroid slices
-    present = [n for n, _, _ in MODELS if n in vols]
+    present = [n for n in MODELS if n in vols]
     vmax = np.percentile(np.concatenate([vols[n][brain] for n in present]), 99)    # shared scale
 
     # Figure 1: |E| per model, 3 planes, on T1

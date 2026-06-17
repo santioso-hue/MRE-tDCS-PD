@@ -5,10 +5,10 @@ pilot-verified on FullPD5; this scales it to the cohort and adds the recon-all p
 montages, and the group statistics. Do NOT commit/push from the cluster agent — the user handles git.
 
 ## Decisions to lock BEFORE the batch
-- **FreeSurfer version:** match Olsson's 7.2 if available; else document 8.2.0 (`build_rois_freesurfer.py`
+- **FreeSurfer version:** match Olsson's 7.2 if available; else document 8.2.0 (`analysis/build_rois.py`
   is version-agnostic, but the parcellation differs slightly between versions).
-- **CIT168 label indices:** confirm `CIT168_NUCLEI` in `build_rois_freesurfer.py` against the exact
-  CIT168/Pauli release `analysis/07_build_tier3_nuclei.sh` warps (the integer keys are placeholders).
+- **CIT168 label indices:** confirm the CIT168/Pauli 4D volume indices in `analysis/07_build_tier3_nuclei.sh`
+  against the exact CIT168/Pauli release it warps (the integer indices are release-specific).
 - **MRE confidence threshold:** set `05_mre_efield_comparison.py --conf-thresh` to Olsson's cutoff
   (default is the in-brain 10th percentile).
 - HD montage geometry: locked (M1 ring C3+Cz/F3/T7/P3; DLPFC ring F3+Fp1/Fz/C3/F7).
@@ -41,10 +41,10 @@ the long pole, so launch it first.**
 | 2 | Parcellation | `recon-all -all` then `segmentBS.sh` | T1 | **6–12 h** (long pole) |
 | 3 | DTI conductivity | `pipeline/01_dwi2cond.sh` | m2m (1) | ~30 min |
 | 4 | QTI covariance fit | `pipeline/run_qti_cov.m` (MATLAB) | fit/ inputs | 10–30 min |
-| 5 | Build ⟨D⟩ maps | `pipeline/prepare_dmri_tensor.py` | (4) | fast |
-| 6 | Register dMRI→T1 | `pipeline/02_register_dmri_to_T1.sh` | m2m (1), (5) | ~10 min (fnirt); also emits MD_T1/C_mu_T1 |
+| 5 | Build ⟨D⟩ maps | `pipeline/prepare_dmri_tensor.py` | (4) | fast (invoked automatically by stage 6, step 1) |
+| 6 | Register dMRI→T1 | `pipeline/02_register_dmri_to_T1.sh` | m2m (1), (5) | S0-driven 12-DOF affine, ~1 min; emits s0_T1/FA_T1 (QC), MD_T1/uFA_T1, lam{1,2,3}_T1, tensor_triaxial_T1, v1_T1, dMRI_mask_T1 |
 | 7 | Conductivity tensor | `pipeline/03_build_conductivity_tensor.py` | (6) | fast |
-| 8 | recon-all ROIs | `analysis/build_rois_freesurfer.py --fs_dir …` | recon-all (2), m2m (1) | ~5 min |
+| 8 | recon-all ROIs | `analysis/build_rois.py --fs_dir …` | recon-all (2), m2m (1) | ~5 min |
 | 9 | CIT168 nuclei | `analysis/07_build_tier3_nuclei.sh` (ANTs) | T1 | 30–60 min; merge 9 nuclei into (8) |
 | 10 | MRE→T1 | `pipeline/05_register_mre_to_T1.sh` | m2m (1), MRE maps | ~10 min |
 | 11 | Simulations | `pipeline/04_run_simulations.py` | m2m (1), tensors (3,7) | ~1 h (4 montages × 3 models) |
