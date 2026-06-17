@@ -24,8 +24,6 @@
 # Usage:
 #   bash pipeline/01_dwi2cond.sh
 #   # inspect registration afterwards:  dwi2cond --check "$SUBJECT"
-#
-# Runtime: ~6 min
 
 set -euo pipefail
 

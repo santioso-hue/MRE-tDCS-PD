@@ -68,7 +68,7 @@ for name in MODELS:
     print(f"  {name}: interpolated -> magnE_{name.replace('-', '_')}_T1.nii.gz")
 
 # comparison + validation table
-print("\n=== Per-model |E| (V/m), tissue-level (no ROIs) ===")
+print("\nPer-model |E| (V/m), tissue-level (no ROIs)")
 print(f"{'model':9s}{'GM mean':>9s}{'GM med':>8s}{'GM p95':>8s}{'GM max':>8s}{'WM p95':>8s}{'spike':>7s}   valid")
 for name in MODELS:
     if name not in rows:
@@ -79,7 +79,7 @@ for name in MODELS:
 print(f"  (validation: GM p95 in {EFIELD_P95} V/m, spike max/p95 <= {SPIKE_MAX})")
 
 # model-vs-model deltas (the conductivity-model effect, brain GM+WM)
-print("\n=== Global E-field deltas within cerebral GM+WM ===")
+print("\nGlobal E-field deltas within cerebral GM+WM")
 for a, b in [("MD-dMRI", "DTI"), ("MD-dMRI", "ISO"), ("DTI", "ISO")]:
     if a not in vols or b not in vols:
         continue

@@ -18,7 +18,7 @@ t1 = nib.load(os.path.join(M2M, "T1.nii.gz"))
 aff = t1.affine; shape = t1.shape
 vx = abs(np.linalg.det(aff[:3, :3]))
 
-# world-x of every voxel once (for the L/R split), guarding the macOS Accelerate matmul flags
+# world-x of every voxel once (for the L/R split); errstate below silences BLAS matmul warnings
 ii, jj, kk = np.indices(shape)
 grid = np.vstack([ii.ravel(), jj.ravel(), kk.ravel(), np.ones(ii.size)]).astype(np.float64)
 with np.errstate(all="ignore"):

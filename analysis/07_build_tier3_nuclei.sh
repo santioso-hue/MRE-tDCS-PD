@@ -29,7 +29,7 @@ done
 names=(SNc SNr VTA RN STN)
 idxs=( 6   8   10  7  15)
 
-echo "=== Warp Tier-3 nuclei (CIT168 2009c -> NLin6 -> subject) ==="
+echo "Warp Tier-3 nuclei (CIT168 2009c -> NLin6 -> subject)"
 for n in "${!names[@]}"; do
   nm="${names[$n]}"; i="${idxs[$n]}"
   fslroi "$PAULI" "$T3/_mni_${nm}.nii.gz" "$i" 1

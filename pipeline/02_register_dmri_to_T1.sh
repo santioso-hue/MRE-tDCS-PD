@@ -13,7 +13,6 @@
 # vecreg -t (the covariant reorientation for an affine). 03 then assembles the conductivity tensor.
 #
 # Usage:   PIPELINE_CONFIG=<subject config.sh> bash pipeline/02_register_dmri_to_T1.sh
-# Runtime: ~1 min.
 
 set -euo pipefail
 
@@ -48,7 +47,7 @@ done
 mkdir -p "$REG_DIR"
 cd "$REG_DIR"
 
-echo "=== Step 1: reconstruct <D> + eigenvalues + v1 + S0 + QA maps from the QTI fit (dMRI space) ==="
+echo "Step 1: reconstruct <D> + eigenvalues + v1 + S0 + QA maps from the QTI fit (dMRI space)"
 # prepare_dmri_tensor needs a 3D image on the fit grid for the output affine/header. run_qti_cov_cohort
 # writes a stable dmri_grid_ref.nii.gz for exactly this; fall back to the fit auto-mask for older fits.
 QDIR="$(dirname "$QTI_MFS")"
@@ -61,7 +60,7 @@ export DMRI_REF
 "$SIMNIBS_BIN/simnibs_python" "$SCRIPT_DIR/prepare_dmri_tensor.py"
 
 echo ""
-echo "=== Step 2: brain-extract the charm T2 (the S0 contrast match, registration target) ==="
+echo "Step 2: brain-extract the charm T2 (the S0 contrast match, registration target)"
 T2_BRAIN="T2_brain.nii.gz"
 "$SIMNIBS_BIN/simnibs_python" - "$M2M_DIR" "$T2_BRAIN" <<'PY'
 import sys, os, numpy as np, nibabel as nib
@@ -75,13 +74,13 @@ PY
 require_nonzero "$T2_BRAIN"
 
 echo ""
-echo "=== Step 3: S0-driven 12-DOF affine — dMRI S0 -> charm T2 (Mattes MI) ==="
+echo "Step 3: S0-driven 12-DOF affine, dMRI S0 -> charm T2 (Mattes MI)"
 flirt -in s0_dMRI.nii.gz -ref "$T2_BRAIN" -omat dMRI_to_T1_aff.mat -dof 12 -cost mutualinfo \
       -searchrx -25 25 -searchry -25 25 -searchrz -25 25
 [ -s dMRI_to_T1_aff.mat ] || { echo "ERROR: S0 affine failed"; exit 1; }
 
 echo ""
-echo "=== Step 4: carry every map to T1 with that one affine ==="
+echo "Step 4: carry every map to T1 with that one affine"
 # Scalars (trilinear): eigenvalues for the conductivity tensor, plus QA/QC maps. Eigenvalues are warped
 # as scalars so the anisotropy magnitude is preserved (whole-tensor interpolation would dilute it); the
 # orientation is carried separately by vecreg below.
@@ -100,7 +99,7 @@ for out in FA_T1 lam1_T1 lam2_T1 lam3_T1 MD_T1 uFA_T1 s0_T1 dMRI_mask_T1 v1_T1 t
 done
 
 echo ""
-echo "=== Registration complete (outputs in $REG_DIR) ==="
+echo "Registration complete (outputs in $REG_DIR)"
 echo "  lam1/lam2/lam3_T1.nii.gz   mean-tensor eigenvalues (um2/ms, scalar)"
 echo "  tensor_triaxial_T1.nii.gz  reoriented <D> frame (in-plane v2,v3 source)"
 echo "  v1_T1.nii.gz               principal eigenvector (vecreg)"

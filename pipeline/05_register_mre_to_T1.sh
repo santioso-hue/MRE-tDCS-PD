@@ -48,17 +48,17 @@ for f in "$T1_REF" "$ORIG" "$MRE_STIFFNESS" "$MRE_ALPHA"; do
 done
 mkdir -p "$REG_DIR"; cd "$REG_DIR"
 
-echo "=== FS-conformed T1 -> charm T1 affine (orig.mgz, 6-DOF MI; same transform build_rois uses) ==="
+echo "FS-conformed T1 -> charm T1 affine (orig.mgz, 6-DOF MI; same transform build_rois uses)"
 "$SIMNIBS_BIN/simnibs_python" -c "import nibabel as nib; nib.save(nib.load('$ORIG'), 'orig_fs.nii.gz')"
 flirt -in orig_fs.nii.gz -ref "$T1_REF" -omat fs_to_charm.mat -dof 6 -cost mutualinfo \
       -searchrx -20 20 -searchry -20 20 -searchrz -20 20 -interp trilinear   # match build_rois' orig->charm
 [ -s fs_to_charm.mat ] || { echo "ERROR: orig->charm flirt failed"; exit 1; }
 
-echo "=== verify the MRE maps are on the conformed orig grid before applying the orig->charm transform ==="
+echo "verify the MRE maps are on the conformed orig grid before applying the orig->charm transform"
 assert_conformed_grid "$MRE_STIFFNESS" orig_fs.nii.gz
 assert_conformed_grid "$MRE_ALPHA"     orig_fs.nii.gz
 
-echo "=== resample MRE stiffness + alpha (his FS-T1 grid) into charm T1 ==="
+echo "resample MRE stiffness + alpha (his FS-T1 grid) into charm T1"
 flirt -in "$MRE_STIFFNESS" -ref "$T1_REF" -applyxfm -init fs_to_charm.mat -interp trilinear -out mre_stiffness_T1.nii.gz
 flirt -in "$MRE_ALPHA"     -ref "$T1_REF" -applyxfm -init fs_to_charm.mat -interp trilinear -out mre_alpha_T1.nii.gz
 # alpha (springpot exponent) is physically in (0,1]; the delivered map carries Helmholtz-inversion

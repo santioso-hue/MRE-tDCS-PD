@@ -84,7 +84,6 @@ tests/     mean-tensor reconstruction + QC-harness checks
 
 ## Notes
 
-- On macOS/Apple Silicon the scripts set `OMP_NUM_THREADS=1` and `KMP_DUPLICATE_LIB_OK=TRUE` for SimNIBS.
 - Subject data (NIfTIs, meshes, `.mat` fits, working directories) and derived outputs are gitignored;
   the repository contains code and documentation only.
 - The models are motivated by bias arguments and compared against each other; direct validation against

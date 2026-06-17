@@ -1,33 +1,12 @@
 #!/bin/bash
-# 00_charm.sh — Build 5-tissue head model from T1+T2 MRI using SimNIBS charm
+# 00_charm.sh — build the 5-tissue head model from T1+T2 with SimNIBS charm (high-quality settings
+# in config/charm_highquality.ini). Produces a tetrahedral FEM mesh in m2m_<SUBJECT_ID>/.
 #
-# Produces a tetrahedral FEM mesh in m2m_<SUBJECT_ID>/ for tDCS simulation.
-# Uses high-quality settings (see config/charm_highquality.ini) tuned for
-# macOS Apple Silicon and T1+T2 input.
+# Usage:   bash pipeline/00_charm.sh <SUBJECT_ID> <T1.nii> <T2.nii> <output_dir> [ini_file]
+# Example: bash pipeline/00_charm.sh "$SUBJECT" "$WORK_DIR/T1w.nii" "$WORK_DIR/T2w.nii" "$WORK_DIR" config/charm_highquality.ini
 #
-# Prerequisites:
-#   SimNIBS 4.6 at ~/Applications/SimNIBS-4.6/
-#   T1 and T2 images reoriented to standard space and resampled to 1 mm isotropic
-#   (use fslreorient2std + flirt -applyisoxfm 1 + --forceqform)
-#
-# Usage:
-#   bash 00_charm.sh <SUBJECT_ID> <T1.nii> <T2.nii> <output_dir> <ini_file>
-#
-# Example:
-#   bash pipeline/00_charm.sh "$SUBJECT" \
-#        $WORK_DIR/T1w.nii \
-#        $WORK_DIR/T2w.nii \
-#        $WORK_DIR \
-#        config/charm_highquality.ini
-#
-# Runtime: ~1 hour on Apple Silicon M-series
-# macOS fixes applied:
-#   OMP_NUM_THREADS=1       — prevents OpenMP deadlock
-#   KMP_DUPLICATE_LIB_OK=TRUE — prevents OpenMP library conflict
-#   caffeinate -i           — prevents macOS sleep during long run
-#
-# IMPORTANT: If T1/T2 were prepared with flirt -applyisoxfm, add --forceqform
-# to charm to avoid a qform/sform mismatch error.
+# charm runs with --forceqform so a qform/sform mismatch (e.g. after resampling T1/T2 to 1 mm
+# isotropic with flirt -applyisoxfm) does not abort segmentation.
 
 set -euo pipefail
 
@@ -61,14 +40,7 @@ export KMP_DUPLICATE_LIB_OK=TRUE
 mkdir -p "$OUT_DIR"
 cd "$OUT_DIR"
 
-echo "=== SimNIBS charm — 5-tissue head model ==="
-echo "Subject:  $SUBJECT_ID"
-echo "T1:       $T1"
-echo "T2:       $T2"
-echo "Output:   $OUT_DIR"
-echo "Settings: $INI"
-echo "Started:  $(date)"
-echo ""
+echo "charm: subject=$SUBJECT_ID  T1=$T1  T2=$T2  output=$OUT_DIR  settings=$INI"
 
 caffeinate -i \
   charm "$SUBJECT_ID" "$T1" "$T2" \
@@ -81,12 +53,4 @@ caffeinate -i \
 # confirm the head-model directory was actually produced.
 [ -d "m2m_${SUBJECT_ID}" ] || { echo "ERROR: charm did not produce m2m_${SUBJECT_ID}/ — see charm_${SUBJECT_ID}.log"; exit 1; }
 
-echo ""
-echo "=== charm complete: $(date) ==="
-echo "Head model: $OUT_DIR/m2m_${SUBJECT_ID}/"
-echo ""
-echo "Next steps:"
-echo "  1. bash pipeline/01_dwi2cond.sh  (DTI tensor for the DTI baseline)"
-echo "  2. bash pipeline/02_register_dmri_to_T1.sh"
-echo "  3. simnibs_python pipeline/03_build_conductivity_tensor.py"
-echo "  4. simnibs_python pipeline/04_run_simulations.py"
+echo "Done. Head model: $OUT_DIR/m2m_${SUBJECT_ID}/"

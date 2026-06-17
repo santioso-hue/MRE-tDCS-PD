@@ -28,7 +28,7 @@ NOTE: do NOT pass fn_tensor_nifti with tms_flex_opt/tes_flex_opt — documented 
 """
 import os, sys, argparse
 
-os.environ.setdefault("OMP_NUM_THREADS", "1")          # macOS Apple Silicon OpenMP guard (before simnibs)
+os.environ.setdefault("OMP_NUM_THREADS", "1")          # OpenMP guard, set before importing simnibs
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -80,7 +80,7 @@ def run(montage_name, model_name):
     mont = MONTAGES[montage_name]
     aniso, tensor = MODELS[model_name]
     pathfem = f"sim_{montage_name}_{model_name.replace('-', '_')}"   # token matches 04_extract lookup
-    print("=" * 60); print(f"MONTAGE {montage_name}  x  MODEL {model_name}  ->  {pathfem}"); print("=" * 60)
+    print(f"MONTAGE {montage_name}  x  MODEL {model_name}  ->  {pathfem}")
     s = simnibs.sim_struct.SESSION(); s.subpath = SUBPATH; s.pathfem = pathfem
     s.open_in_gmsh = False                             # headless/batch: never auto-open GMSH (it hangs without a display)
     if tensor is not None:
@@ -126,7 +126,6 @@ def main():
             if err is not None:
                 errors[f"{mont}/{model}"] = err
 
-    print("=" * 60)
     if errors:
         print(f"Failed ({len(errors)}):")
         for k, e in errors.items():
