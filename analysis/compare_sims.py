@@ -1,15 +1,9 @@
 """
-compare_sims.py — Global (tissue-level) comparison, validation, and visualization of the tDCS sims.
-
-This is NOT an ROI analysis (no anatomical masks). It compares the three conductivity models at the
-tissue level (GM / WM / whole-brain |E|) and produces viewable outputs:
-  * per-model |E| statistics + a PASS/FLAG validation (physiological GM p95, no spikes)
-  * DTI↔MD-dMRI and ISO↔MD-dMRI global deltas (the conductivity-model effect)
-  * magnE interpolated to T1-space NIfTIs  -> open in FSLeyes over m2m_<subj>/T1.nii.gz
-  * overlay PNGs (|E| per model in 3 planes + the MD-dMRI − DTI difference)
+compare_sims.py — tissue-level (GM/WM/brain |E|) comparison, validation, and visualization of the three
+conductivity-model sims. NOT an ROI analysis (no anatomical masks); ROIs live in the qc_harness pipeline.
 
 Usage:   simnibs_python analysis/compare_sims.py
-Outputs: analysis/sim_compare/  (NIfTIs + PNGs + the console table below)
+Outputs: analysis/sim_compare/<subj>/  (T1-space NIfTIs, overlay PNGs, console table)
 """
 import os
 import sys
@@ -20,13 +14,13 @@ import nibabel as nib
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "pipeline"))
 from _config import cfg  # noqa: E402
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _sims import MODELS, sim_mesh  # noqa: E402  (shared montage-aware mesh lookup)
+from _sims import MODELS, sim_mesh  # noqa: E402
 from simnibs import mesh_io  # noqa: E402
 
 _ap = argparse.ArgumentParser(); _ap.add_argument("--montage", default="M1")
 MONTAGE = _ap.parse_args().montage
 WDIR = cfg["WORK_DIR"]; M2M = cfg["M2M_DIR"]; SUBJ = cfg["SUBJECT"]
-OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sim_compare", SUBJ)   # per-subject
+OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sim_compare", SUBJ)
 os.makedirs(OUT, exist_ok=True)
 EFIELD_P95 = (0.10, 0.60)   # physiological GM |E| band at 2 mA (V/m)
 SPIKE_MAX = 5.0             # max/p95 — guards against a single hot mesh element
@@ -56,8 +50,8 @@ for name in MODELS:
     E = msh.field["magnE"].value
     tag = msh.elm.tag1
     gm, wm, br = stats(E[tag == 2]), stats(E[tag == 1]), stats(E[(tag == 1) | (tag == 2)])
-    # spike = GM max/p95 (the target tissue; matches qc_harness). A whole-brain max/p95 is inflated
-    # by single hot WM/electrode-boundary FEM elements and is not a meaningful field check.
+    # spike = GM max/p95 (matches qc_harness): whole-brain max/p95 is inflated by single hot
+    # WM/electrode-boundary FEM elements, so it is not a meaningful field check.
     spike = gm["max"] / max(gm["p95"], 1e-9)
     ok = (EFIELD_P95[0] <= gm["p95"] <= EFIELD_P95[1]) and (spike <= SPIKE_MAX)
     rows[name] = dict(gm=gm, wm=wm, brain=br, spike=spike, ok=ok)

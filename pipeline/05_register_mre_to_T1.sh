@@ -1,12 +1,9 @@
 #!/bin/bash
-# 05_register_mre_to_T1.sh — bring the MRE mechanical maps into charm/mesh T1 space for the post-hoc
-# cross-modal comparison (mechanics vs MD-dMRI microstructure / E-field).
+# 05_register_mre_to_T1.sh — resample the MRE maps (stiffness + alpha) into charm/mesh T1 space so MRE,
+# ROIs, and E-field share one space for the cross-modal comparison.
 #
-# Cohort MRE (stiffness + alpha) is delivered ALREADY in the FreeSurfer-conformed T1 (256^3, "_ToT1"),
-# the same grid as recon-all's orig.mgz. So this resamples it to the charm/mesh T1 via the orig->charm
-# rigid affine -- the identical transform analysis/build_rois.py uses to place the ROIs -- so the MRE
-# maps, the ROIs, and the E-field all live in one space. (No raw-MRE->T1 registration is needed; the
-# upstream pipeline already did MRE->T1.)
+# MRE is delivered already in the FreeSurfer-conformed T1 (256^3, "_ToT1" = recon-all orig.mgz grid), so
+# this applies the orig->charm affine that analysis/build_rois.py uses for the ROIs; no raw-MRE->T1 step.
 #
 # Usage:   PIPELINE_CONFIG=<subject config.sh> bash pipeline/05_register_mre_to_T1.sh
 # Output:  registration/mre_stiffness_T1.nii.gz, mre_alpha_T1.nii.gz   (charm T1 space)
@@ -30,9 +27,8 @@ require_nonzero() {
 }
 
 assert_conformed_grid() {
-    # The MRE maps must live on the FreeSurfer-conformed orig grid (the delivered _ToT1 maps), the SAME
-    # grid the orig->charm transform is derived from. A raw scanner-grid map (e.g. an oblique 160x160x48
-    # stiffness volume) would be SILENTLY mis-placed by that transform, so fail loudly if the dims differ.
+    # The orig->charm transform is derived from the conformed orig grid, so a raw scanner-grid map (e.g.
+    # an oblique 160x160x48 stiffness volume) would be SILENTLY mis-placed by it. Fail loudly on dim mismatch.
     local map="$1" refimg="$2" fld m r
     for fld in dim1 dim2 dim3; do
         m="$(fslval "$map" "$fld" | tr -d '[:space:]')"
@@ -54,11 +50,10 @@ flirt -in orig_fs.nii.gz -ref "$T1_REF" -omat fs_to_charm.mat -dof 6 -cost mutua
       -searchrx -20 20 -searchry -20 20 -searchrz -20 20 -interp trilinear   # match build_rois' orig->charm
 [ -s fs_to_charm.mat ] || { echo "ERROR: orig->charm flirt failed"; exit 1; }
 
-echo "verify the MRE maps are on the conformed orig grid before applying the orig->charm transform"
 assert_conformed_grid "$MRE_STIFFNESS" orig_fs.nii.gz
 assert_conformed_grid "$MRE_ALPHA"     orig_fs.nii.gz
 
-echo "resample MRE stiffness + alpha (his FS-T1 grid) into charm T1"
+echo "resample MRE stiffness + alpha into charm T1"
 flirt -in "$MRE_STIFFNESS" -ref "$T1_REF" -applyxfm -init fs_to_charm.mat -interp trilinear -out mre_stiffness_T1.nii.gz
 flirt -in "$MRE_ALPHA"     -ref "$T1_REF" -applyxfm -init fs_to_charm.mat -interp trilinear -out mre_alpha_T1.nii.gz
 # alpha (springpot exponent) is physically in (0,1]; the delivered map carries Helmholtz-inversion

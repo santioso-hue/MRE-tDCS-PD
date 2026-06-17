@@ -1,14 +1,13 @@
 """_rois.py — Shared ROI loading + sampling for the analysis scripts.
 
-The ROIs are int-label masks in mesh space, built from the recon-all parcellation by
+ROIs are int-label masks on the charm/mesh grid, built from the recon-all parcellation by
 analysis/build_rois.py:
-  registration/freesurfer_rois/roi_labels_meshspace.nii.gz   int labels on the charm/mesh grid
+  registration/freesurfer_rois/roi_labels_meshspace.nii.gz   int labels
   registration/freesurfer_rois/rois.json                     {label: name}
-Coverage: cortical and white-matter lobes, corpus callosum, and the aseg subcortical structures
-(thalamus, caudate, putamen, pallidum, accumbens, hippocampus, amygdala, and the brainstem split
-into Mesencephalon + Pons).
-Both 04 (E-field per ROI) and 05 (MRE cross-modal comparison) consume this single labeled volume;
-each ROI is sampled over every element/voxel it contains (no fixed-radius spheres).
+Coverage: cortical and WM lobes, corpus callosum, aseg subcortical (thalamus, caudate, putamen,
+pallidum, accumbens, hippocampus, amygdala), brainstem split into Mesencephalon + Pons.
+Consumed by 04 (E-field per ROI) and 05 (MRE comparison); each ROI is sampled over every
+element/voxel it contains (no fixed-radius spheres).
 """
 import os
 import json
@@ -92,7 +91,7 @@ def sample_tensor_aniso_medians(tensor_path, labeled, lab_affine, names):
 
 
 def assign_mesh_labels(bary_world, labeled, lab_affine):
-    """Map FEM element barycentres (N x 3, subject world mm) to ROI labels (N int)."""
+    """ROI label per FEM element barycentre (N x 3, subject world mm) -> (N int)."""
     inv = np.linalg.inv(lab_affine)
     b = np.ascontiguousarray(bary_world, dtype=np.float64)
     with np.errstate(all="ignore"):

@@ -1,9 +1,9 @@
 """
-test_cohort_stats.py — validate analysis/06_cohort_stats.py against synthetic cohorts with KNOWN effects.
+test_cohort_stats.py — validate analysis/06_cohort_stats.py against a synthetic cohort with known effects.
 
-Builds a fake 29-subject cohort (12 PD, 17 HC) with planted signals and asserts the stats engine
-recovers them: a consistent paired MD-dMRI>DTI ROI is H1-significant, a noisy one is not; a planted
-PD>HC age-adjusted effect is H3-significant, a null ROI is not. No real data required.
+Builds a fake 29-subject cohort (12 PD, 17 HC) with planted signals and asserts the engine recovers
+them: consistent MD-dMRI>DTI is H1-significant, a noisy ROI is not; a planted age-adjusted PD>HC
+effect is H3-significant, a null ROI is not.
 
 Usage:  conda run -n neuro python tests/test_cohort_stats.py
 """

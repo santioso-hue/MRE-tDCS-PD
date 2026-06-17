@@ -1,18 +1,12 @@
 """
-tests/validate_mean_tensor.py — Reproducible validation of the sigma ~ <D> model's data foundation:
-recompute the QTI covariance mean tensor from the md-dmri toolbox fit and assert the facts the
-derivation claims, so a reviewer can verify them.
+tests/validate_mean_tensor.py -- assert the QTI covariance mean tensor matches the facts the
+sigma ~ <D> derivation claims, so a reviewer can verify them.
 
     simnibs_python tests/validate_mean_tensor.py
 
-PART A (always): from cov_mfs.mat (oriented mean tensor m(:,:,:,2:7), Mandel Voigt) + cov_dps.mat:
-  - <D> built from m(2:7) is the mean tensor:        trace(<D>)/3 == cov.MD
-  - lambda1(<D>) == ad ; (lambda2+lambda3)/2 == rd   (over positive-definite voxels)
-  - principal eigenvector of <D> == cov.u
-  - report positive-definite fraction and the degenerate (isotropized in 03) fraction
-  - print the authoritative base anisotropy (median lambda1/lambda3 over the QTI brain mask)
-PART B (optional): median angle between the registered QTI <D> and the dwi2cond DTI V1 in core WM
-  (runs only if 01_dwi2cond + 02_register outputs exist).
+PART A: rebuild <D> from cov_mfs m(2:7) (Mandel Voigt) and check against cov_dps:
+trace/3==MD, lambda1==ad, (lambda2+lambda3)/2==rd, v1==u (all over PD voxels).
+PART B (optional): median V1 angle between registered QTI <D> and dwi2cond DTI in core WM.
 """
 import os
 import sys
@@ -67,8 +61,8 @@ def main():
     check("v1(<D>) == cov.u (PD voxels)", np.median(ang[pdm]) < 2.0, f"median angle={np.median(ang[pdm]):.2f} deg")
 
     # Negative control: the Mandel /sqrt2 de-scaling of the off-diagonals is load-bearing. Rebuild <D>
-    # WITHOUT it (off-diagonals left at sqrt2 magnitude) and confirm the principal axis then DISAGREES
-    # with cov.u, so a future regression that drops or doubles the sqrt2 cannot pass the checks above silently.
+    # without it and confirm v1 then disagrees with cov.u, so a regression that drops the sqrt2 cannot
+    # pass the checks above silently.
     Dbad = D.copy()
     Dbad[:, 0, 1] = Dbad[:, 1, 0] = D6[:, 3]
     Dbad[:, 0, 2] = Dbad[:, 2, 0] = D6[:, 4]

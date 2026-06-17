@@ -1,10 +1,9 @@
 #!/bin/bash
 # run_qti_cov_cohort.sh — drive the cohort QTI covariance fit (run_qti_cov_cohort.m) for one subject.
 #
-# Expects a subject dir containing dmri/ (linear_corrected + spherical_corrected + bval/bvec) and a
-# writable fit/ output dir. Produces fit/qti_cov/cov_mfs.mat + cov_dps.mat (oriented <D>).
-#
-# Usage: bash pipeline/run_qti_cov_cohort.sh <subject_dir>
+# Input:  <subject_dir>/dmri/ (linear_corrected + spherical_corrected + bval/bvec)
+# Output: <subject_dir>/fit/qti_cov/{cov_mfs.mat, cov_dps.mat} (oriented <D>)
+# Usage:  bash pipeline/run_qti_cov_cohort.sh <subject_dir>
 set -euo pipefail
 SUBJDIR="${1:?usage: run_qti_cov_cohort.sh <subject_dir with dmri/ and fit/>}"
 SUBJDIR="$(cd "$SUBJDIR" && pwd)"   # absolutize: md-dmri setup_paths.m changes cwd, breaking relative paths

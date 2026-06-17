@@ -1,14 +1,12 @@
 #!/bin/bash
-# 07_build_tier3_nuclei.sh — Tier-3 EXPLORATORY small PD nuclei ROIs from CIT168/Pauli:
-# SNc, SNr, VTA, RN, STN (L/R), warped to subject space.
+# 07_build_tier3_nuclei.sh — Tier-3 small PD nuclei ROIs (SNc, SNr, VTA, RN, STN L/R) from
+# CIT168/Pauli, warped to subject space. Reuses the cache + 2009c->NLin6 affine from 06.
 #
-# These nuclei are smaller than a reliable 2.5 mm dMRI / 3 mm MRE voxel and sit within a
-# few mm of each other, so per the ROI brief they are E-FIELD ONLY (no MRE cross-corr) and
-# OPTIONAL to report. We keep each nucleus as its own (overlap-allowed) mask and report the
-# pairwise overlap so the resolution caveat is explicit. FreeSurfer/HarvardOxford cannot
-# resolve these; only the CIT168 atlas can.
+# Usage: bash analysis/07_build_tier3_nuclei.sh
 #
-# Reuses the atlas cache + 2009c->NLin6 affine built by 06_build_atlas_rois.sh.
+# These nuclei are smaller than a 2.5 mm dMRI / 3 mm MRE voxel and sit within a few mm of each
+# other: E-field only (no MRE cross-corr), kept as overlap-allowed masks. Only CIT168 resolves
+# them (FreeSurfer/HarvardOxford cannot).
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../config/config.sh"

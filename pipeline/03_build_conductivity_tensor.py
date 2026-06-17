@@ -1,33 +1,27 @@
 """
-03_build_conductivity_tensor.py — Build THE MD-dMRI conductivity tensor (σ ∝ ⟨D⟩).
+03_build_conductivity_tensor.py — build THE MD-dMRI conductivity tensor (σ ∝ ⟨D⟩).
 
-The single MD-dMRI model is the QTI mean diffusion tensor ⟨D⟩ (the first cumulant of the
-intra-voxel diffusion-tensor distribution) mapped to conductivity by the standard SimNIBS 'vn'
-(volume-normalized) rule. The downstream physics is IDENTICAL to dwi2cond's DTI model; only the
-input tensor differs (QTI ⟨D⟩ vs single-shell DTI). So ISO / DTI / MD-dMRI is a controlled
-comparison that isolates the input-tensor estimation, and nothing else departs from standard SimNIBS.
+Usage: simnibs_python pipeline/03_build_conductivity_tensor.py  ->  tensor_MD_dMRI.nii.gz
 
-Alternatives evaluated and rejected (free-water elimination: ~0% field effect under 'vn' and ill-posed
-at this volume count; magnitude preservation: injects ~46%-CoV partial-volume noise; μFA/covariance:
-microscopic, no macroscopic eigenframe). The reasoning is in conductivity_models_derivation.md.
+The MD-dMRI model is the QTI mean diffusion tensor ⟨D⟩ (first cumulant of the intra-voxel
+diffusion-tensor distribution) mapped to conductivity by the standard SimNIBS 'vn' rule. Downstream
+physics is identical to dwi2cond's DTI model; only the input tensor differs (QTI ⟨D⟩ vs single-shell
+DTI), so ISO/DTI/MD-dMRI is a controlled comparison isolating input-tensor estimation. Rejected
+alternatives (FWE: ~0% field effect under 'vn', ill-posed at this volume count; magnitude
+preservation: ~46%-CoV partial-volume noise; μFA/covariance: microscopic, no macroscopic eigenframe)
+in conductivity_models_derivation.md.
 
-Registering a diffusion tensor to the structural grid must REORIENT it, not just resample the
-components. Eigen-decomposition approach:
-  • eigenVALUES λ1≥λ2≥λ3 — interpolated INDEPENDENTLY as three scalar maps (FLIRT trilinear).
-  • orientation frame     — eigenvectors of the whole tensor carried by vecreg (PPD-style
-                            reorientation; Alexander 2001), principal axis anchored to v1_T1 (= dps.u).
-Component-wise trilinear interpolation of the whole 6-vector averages neighbouring tensors and
-shrinks anisotropy (the tensor "swelling" that log-Euclidean/PPD schemes avoid). After interpolation
-the three scalar maps are re-SORTED to λ1≥λ2≥λ3 and re-paired with the frame BY MAGNITUDE ORDER, and
-λ1 is anchored to the validated v1_T1, so a boundary voxel where the maps cross cannot mis-assign.
+Registering a diffusion tensor must REORIENT it, not just resample the components. Eigenvalues
+λ1≥λ2≥λ3 are interpolated independently as three scalar maps (FLIRT trilinear); the orientation
+frame is carried by vecreg (PPD-style reorientation, Alexander 2001), principal axis anchored to
+v1_T1 (= dps.u). Component-wise trilinear interpolation of the whole 6-vector would average
+neighbouring tensors and shrink anisotropy (the "swelling" PPD avoids). After interpolation the
+scalar maps are re-sorted to λ1≥λ2≥λ3 and re-paired with the frame by magnitude order, λ1 anchored
+to v1_T1, so a boundary voxel where the maps cross cannot mis-assign. Reconstruct in T1 space:
+D = Σ_k λk_T1 · v_k v_kᵀ.
 
-Reconstruct (T1 space):  D = Σ_k λk_T1 · v_k v_kᵀ   (k=1,2,3)
-
-Usage:
-  simnibs_python pipeline/03_build_conductivity_tensor.py    ->  tensor_MD_dMRI.nii.gz
-
-Model: σ ∝ D — Tuch 2001 effective medium (shared eigenvectors; σ-anisotropy = D-anisotropy) +
-Güllmar 2010 / Rullmann 2009 volume normalization (SimNIBS 'vn'). Fully triaxial (λ2≠λ3 in ~93%).
+σ ∝ D: Tuch 2001 effective medium (shared eigenvectors; σ-anisotropy = D-anisotropy) + Güllmar 2010
+/ Rullmann 2009 volume normalization (SimNIBS 'vn'). Fully triaxial (λ2≠λ3 in ~93%).
 """
 import os
 import sys
@@ -42,14 +36,11 @@ RDIR = cfg["REG_DIR"]   # the T1-space maps written by 02_register_dmri_to_T1.sh
 M2M  = cfg["M2M_DIR"]
 EPS  = 1e-3   # min eigenvalue, µm²/ms (VN-safe)
 
-# The single MD-dMRI model: plain QTI mean tensor ⟨D⟩, mapped by SimNIBS 'vn'.
-# eigenvalue scalar maps (magnitude) + reoriented tensor frame (in-plane orientation), both from 02.
+# Eigenvalue scalar maps (magnitude) + reoriented tensor frame (orientation), both from 02.
 lam_fmt    = "lam{}_T1"
 frame_name = "tensor_triaxial_T1.nii.gz"
 out_name   = "tensor_MD_dMRI.nii.gz"
-print("MD-dMRI conductivity tensor — σ ∝ ⟨D⟩ (QTI mean tensor) -> SimNIBS 'vn'")
 
-print("Loading scalar eigenvalues + orientation frame...")
 lam1 = nib.load(os.path.join(RDIR, lam_fmt.format(1) + ".nii.gz")).get_fdata().astype(np.float64)
 lam2 = nib.load(os.path.join(RDIR, lam_fmt.format(2) + ".nii.gz")).get_fdata().astype(np.float64)
 lam3 = nib.load(os.path.join(RDIR, lam_fmt.format(3) + ".nii.gz")).get_fdata().astype(np.float64)
@@ -95,7 +86,7 @@ v1a[~valid_ref] = evec[~valid_ref, :, 2]         # where v1_T1 invalid, use tens
 v2t = evec[:, :, 1]                              # tensor-frame middle eigenvector
 v2a = v2t - np.sum(v2t * v1a, axis=1)[:, None] * v1a   # orthogonalize to v1a
 n2 = np.linalg.norm(v2a, axis=1)
-bad = n2 < 1e-6                                  # v2t ∥ v1a (rare) → pick any ⊥ vector
+bad = n2 < 1e-6                                  # v2t ∥ v1a → pick any ⊥ vector
 if bad.any():
     tmp = np.tile(np.array([1.0, 0, 0]), (bad.sum(), 1))
     alt = np.abs(v1a[bad, 0]) > 0.9
@@ -122,10 +113,9 @@ ratio = l1 / np.maximum(l3, 1e-6)
 print(f"\nAnisotropy λ1/λ3 (covered brain): median={np.median(ratio):.3f}, p95={np.percentile(ratio,95):.3f}")
 print(f"  > 8 (VN cap): {100*np.mean(ratio>8):.2f}%")
 # Cross-check the two INDEPENDENT reorientation paths: the v1_T1 anchor (vecreg of v1_dMRI) vs the
-# principal axis of the vecreg-reoriented tensor (evec[:,:,2]). They are reoriented separately, so their
-# agreement is a real test that reorientation held (comparing v1 to v1_T1 would be a tautology — v1 IS the
-# anchor). Restrict to voxels where the anchor was actually used, not the degenerate fallback (which set
-# v1 = evec[:,:,2] and would agree trivially).
+# principal axis of the vecreg-reoriented tensor (evec[:,:,2]). Reoriented separately, so agreement is
+# a real test that reorientation held (comparing v1 to v1_T1 would be a tautology — v1 IS the anchor).
+# Restrict to voxels where the anchor was used, not the degenerate fallback (which set v1 = evec[:,:,2]).
 tensor_axis = evec[valid_ref, :, 2]
 ang = np.degrees(np.arccos(np.clip(np.abs(np.sum(v1[valid_ref] * tensor_axis, axis=1)), 0, 1)))
 print(f"v1_T1 anchor vs independent tensor-frame axis: median={np.median(ang):.2f}°, within15°={np.mean(ang<15)*100:.1f}%")

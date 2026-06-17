@@ -3,8 +3,7 @@
 Run:  simnibs_python tests/test_qc_harness.py        (assert-based, no pytest needed)
   or  simnibs_python -m pytest tests/test_qc_harness.py
 
-These exercise the REAL extracted functions from qc_harness (not copies), so they guard the actual
-code path. The headline test is the regression guard for the vacuous VN-degeneracy bug.
+Imports the real qc_harness functions (not copies) so they guard the actual code path.
 """
 import os
 import sys
@@ -26,7 +25,7 @@ def test_vn_check_flags_degenerate_voxels():
                   [0.3, 0.6, 0.9]])     # valid
     degfrac, vn_err, hi, lo = _vn_check(e, 0.126)
     assert abs(degfrac - 2.0 / 3.0) < 1e-9, f"degfrac should be 2/3, got {degfrac}"
-    # demonstrate the OLD clamped path would have reported 0 (the false-confidence we removed):
+    # the old clamped path would have reported 0 here:
     gmv = np.exp(np.mean(np.log(np.maximum(e, 1e-12)), axis=1))
     assert float(np.mean(~(gmv > 0))) == 0.0, "clamped-geomean path reports 0 -> that was the bug"
 

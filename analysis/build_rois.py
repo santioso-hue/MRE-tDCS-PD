@@ -1,44 +1,32 @@
 """
 build_rois.py — recon-all (FreeSurfer) ROI masks in charm/mesh space for the tDCS E-field analysis.
 
-The single ROI builder, matching Olsson et al. 2025 (FreeSurfer 7.2). Needs a recon-all subject dir
-(and FSL for the charm registration); the cohort ships recon-all PRE-COMPUTED in ReconAlls/<subj>, so
-this runs locally with no recon-all step. Whenever a recon-all is needed for a new subject, it is run
-on the cluster.
+Usage:  <simnibs_python> analysis/build_rois.py --fs_dir <recon-all subject dir (contains mri/)>
 
-Emits ROI masks in the charm mesh (E-field) space:
+The single ROI builder, matching Olsson et al. 2025 (FreeSurfer 7.2). Needs a recon-all subject dir
+(cohort ships them PRE-COMPUTED in ReconAlls/<subj>) and FSL for the charm registration. Emits, in
+charm mesh (E-field) space:
   Ctx lobes x4    roi_Ctx_{Frontal,Parietal,Temporal,Occipital}   (Desikan grouped to lobes)
   WM lobes x4     roi_WM_{Frontal,Parietal,Temporal,Occipital}    (from the REAL wmparc)
   Corpus callosum roi_CC                                           (aseg CC labels 251-255)
   Subcortical     roi_{Thalamus,Caudate,Putamen,Pallidum,Accumbens,Hippocampus,Amygdala}_{L,R}  (aseg)
   Brainstem       roi_Mesencephalon, roi_Pons                      (Iglesias 2015 brainstem module)
+plus roi_labels_meshspace.nii.gz and rois.json ({label: name}), the interface consumed from
+registration/freesurfer_rois/ by 04/05, _rois.py, qc_harness.py. Whole-brain GM+WM comes from the
+charm tissue tags downstream, not this label volume.
 
-It also writes a single labeled volume `roi_labels_meshspace.nii.gz` and `rois.json` ({label: name}),
-the interface the analysis scripts (04_extract_roi_efield.py, 05_mre_efield_comparison.py, _rois.py,
-qc_harness.py) consume from registration/freesurfer_rois/. Whole-brain GM+WM is taken from the charm
-tissue tags downstream (it overlaps every other ROI), not from this label volume.
-
-Two things this does that a deep-learning seg-only parcellation cannot: WM lobes from the REAL wmparc
-(3000+idx lh / 4000+idx rh), not a nearest-cortical propagation; and the brainstem split into
-MESENCEPHALON (173) and PONS (174) from the Iglesias 2015 module (brainstemSsLabels), instead of the
-single aseg Brain-Stem (16) which does not match Olsson. (Run `segmentBS.sh` /
-`-brainstem-structures` in recon-all.) The recon-all aparc+aseg also resolves the SimNIBS atlas2subject
-right-hemisphere bug (see state.md).
-
-The fine midbrain nuclei (SNc/SNr/VTA/RN/STN) are NOT built here: the tier-3 nuclei live in
-registration/atlas_rois/tier3/ (built by analysis/07_build_tier3_nuclei.sh, sampled separately as
-overlap-allowed binary masks, E-field-only) and are never routed through this int-label volume.
-
-The label-assembly logic (assemble_labels) is pure and is unit-tested without data in
-tests/test_lobe_grouping.py.
+WM lobes are from the REAL wmparc (3000+idx lh / 4000+idx rh), not nearest-cortical propagation; the
+brainstem is split into MESENCEPHALON (173) / PONS (174) via the Iglesias 2015 module
+(brainstemSsLabels, needs `segmentBS.sh` / recon-all `-brainstem-structures`), not the single aseg
+Brain-Stem (16) which does not match Olsson. The recon-all aparc+aseg also resolves the SimNIBS
+atlas2subject right-hemisphere bug (see state.md). Fine midbrain nuclei (SNc/SNr/VTA/RN/STN) are NOT
+built here; tier-3 nuclei live in registration/atlas_rois/tier3/ (built by 07), never routed through
+this int-label volume.
 
 Method: register recon-all orig.mgz -> charm T1 (FSL FLIRT 6-DOF rigid, same subject), assemble one
 integer ROI-label volume in recon-all space, warp it once to mesh space (nearest-neighbour), split.
 Lobe grouping uses the standard Desikan-Killiany index->lobe map (cingulate folded ant->Frontal /
-post->Parietal; insula excluded from the four lobes). Adjust LOBE_IDX for exact parity with a
-specific atlas.
-
-Usage:  <simnibs_python> analysis/build_rois.py --fs_dir <recon-all subject dir (contains mri/)>
+post->Parietal; insula excluded). assemble_labels is pure and unit-tested in tests/test_lobe_grouping.py.
 """
 import os, sys, json, glob, argparse, subprocess, tempfile
 
@@ -90,10 +78,8 @@ def wm_labels(idxs):
 
 
 def assemble_labels(aparc_aseg, wmparc, brainstem_ss):
-    """Pure: build one integer ROI-label volume (+ {id:name}) from three recon-all label volumes,
-    all on the same grid. No I/O. The tier-3 midbrain nuclei (SNc/SNr/VTA/RN/STN) are NOT merged
-    here: they live in registration/atlas_rois/tier3/ (built by 07), sampled separately as
-    overlap-allowed binary masks, E-field-only."""
+    """Pure (no I/O): build one integer ROI-label volume (+ {id:name}) from three recon-all label
+    volumes, all on the same grid."""
     assert aparc_aseg.shape == wmparc.shape == brainstem_ss.shape, "recon-all label grids differ"
     out = np.zeros(aparc_aseg.shape, np.int16)
     names = {}

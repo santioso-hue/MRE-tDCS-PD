@@ -6,16 +6,15 @@ Conductivity models (montage-independent; only the input tensor differs):
   DTI      — anisotropic 'vn' from dwi2cond (FA-based classical baseline)
   MD-dMRI  — anisotropic 'vn', sigma proportional to <D> (QTI mean tensor) -> tensor_MD_dMRI.nii.gz
 
-Montages (the electrodes change, the tensors do not). Each target gets a conventional pad and a focal
-4x1 HD version, same +2 mA total dose (HD vs pad = same dose, different focality):
-  M1        — C3 anode / Fp2 cathode, 5x5 cm pads, 2 mA  (the primary montage)
+Montages. Each target gets a conventional pad and a focal 4x1 HD version, same +2 mA total dose
+(HD vs pad = same dose, different focality):
+  M1        — C3 anode / Fp2 cathode, 5x5 cm pads, 2 mA  (primary montage)
   DLPFC     — F3 anode / Fp2 cathode, 5x5 cm pads, 2 mA
   HD_M1     — 4x1 ring: centre C3 (+2 mA), returns Cz/F3/T7/P3 (-0.5 mA each), ~1 cm discs
   HD_DLPFC  — 4x1 ring: centre F3 (+2 mA), returns Fp1/Fz/C3/F7 (-0.5 mA each), ~1 cm discs
 Left M1 (C3) is fixed across all subjects to avoid montage-laterality confounding the conductivity-model
-contrast (C4 mirror optional). The small HD discs give higher per-electrode current density than the
-5x5 pads — note in methods. 4x1 ring: Datta et al. 2009 Brain Stimul 2:201; Villamar et al. 2013 (JoVE;
-J Pain 14:371).
+contrast (C4 mirror optional). 4x1 ring: Datta et al. 2009 Brain Stimul 2:201; Villamar et al. 2013
+(JoVE; J Pain 14:371).
 
 Output dirs are namespaced: sim_<montage>_<model>/ (e.g. sim_DLPFC_MD-dMRI). analysis/04_extract_roi_efield
 reads this convention. Free-water elimination was tested and dropped (null); see the FWE archive notes.

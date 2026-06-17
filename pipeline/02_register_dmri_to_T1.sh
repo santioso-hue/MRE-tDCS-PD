@@ -1,16 +1,11 @@
 #!/bin/bash
-# 02_register_dmri_to_T1.sh — bring the QTI mean-tensor maps from dMRI space to T1 (charm/mesh) space.
+# 02_register_dmri_to_T1.sh — carry the QTI mean-tensor maps from dMRI space to T1 (charm/mesh) space.
 #
-# Registration is an S0-driven 12-DOF affine: FLIRT the dMRI model S0 onto the charm T2 (same T2-like
-# contrast, so the fit drives a robust whole-brain affine), then apply that one transform to every map.
-# This matches Christoffer's S0->T2 pairing and stays affine because the cohort dMRI is already
-# Synb0+topup distortion-corrected; the registration bake-off (docs/registration_bakeoff/) showed a
-# nonlinear warp over-warps it (~5 mm) without improving alignment, so an affine is the faithful choice.
-#
-# Runs after 00_charm and the QTI fit. prepare_dmri_tensor.py reconstructs <D>, eigenvalues, v1, S0 and
-# the QA maps in dMRI space; here the S0 drives the affine and each map is carried to T1 by type:
-# scalars trilinear, the brain mask nearest-neighbour, and v1 + the triaxial tensor reoriented with
-# vecreg -t (the covariant reorientation for an affine). 03 then assembles the conductivity tensor.
+# Registration is an S0-driven 12-DOF affine (dMRI S0 -> charm T2, same T2-like contrast), applied to
+# every map. Affine, not nonlinear: the dMRI is already Synb0+topup distortion-corrected, and the
+# bake-off (docs/registration_bakeoff/) showed a warp over-warps it ~5 mm without improving alignment.
+# Maps are carried by type: scalars trilinear, mask nearest-neighbour, v1 + triaxial tensor reoriented
+# with vecreg -t (covariant reorientation for an affine).
 #
 # Usage:   PIPELINE_CONFIG=<subject config.sh> bash pipeline/02_register_dmri_to_T1.sh
 
@@ -47,7 +42,7 @@ done
 mkdir -p "$REG_DIR"
 cd "$REG_DIR"
 
-echo "Step 1: reconstruct <D> + eigenvalues + v1 + S0 + QA maps from the QTI fit (dMRI space)"
+echo "Step 1: reconstruct <D>, eigenvalues, v1, S0, QA maps from the QTI fit (dMRI space)"
 # prepare_dmri_tensor needs a 3D image on the fit grid for the output affine/header. run_qti_cov_cohort
 # writes a stable dmri_grid_ref.nii.gz for exactly this; fall back to the fit auto-mask for older fits.
 QDIR="$(dirname "$QTI_MFS")"
@@ -60,7 +55,7 @@ export DMRI_REF
 "$SIMNIBS_BIN/simnibs_python" "$SCRIPT_DIR/prepare_dmri_tensor.py"
 
 echo ""
-echo "Step 2: brain-extract the charm T2 (the S0 contrast match, registration target)"
+echo "Step 2: brain-extract the charm T2 (registration target, matches S0 contrast)"
 T2_BRAIN="T2_brain.nii.gz"
 "$SIMNIBS_BIN/simnibs_python" - "$M2M_DIR" "$T2_BRAIN" <<'PY'
 import sys, os, numpy as np, nibabel as nib
@@ -99,11 +94,9 @@ for out in FA_T1 lam1_T1 lam2_T1 lam3_T1 MD_T1 uFA_T1 s0_T1 dMRI_mask_T1 v1_T1 t
 done
 
 echo ""
-echo "Registration complete (outputs in $REG_DIR)"
+echo "Done. Outputs in $REG_DIR:"
 echo "  lam1/lam2/lam3_T1.nii.gz   mean-tensor eigenvalues (um2/ms, scalar)"
 echo "  tensor_triaxial_T1.nii.gz  reoriented <D> frame (in-plane v2,v3 source)"
 echo "  v1_T1.nii.gz               principal eigenvector (vecreg)"
 echo "  MD_T1, uFA_T1.nii.gz       QA / post-hoc MRE-comparison maps"
-echo "  s0_T1, FA_T1.nii.gz        registration QC (VISUALLY CHECK s0_T1 / FA_T1 over T1 before trusting)"
-echo ""
-echo "Next: simnibs_python pipeline/03_build_conductivity_tensor.py"
+echo "  s0_T1, FA_T1.nii.gz        registration QC — VISUALLY CHECK over T1 before trusting"

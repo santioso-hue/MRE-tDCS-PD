@@ -1,6 +1,6 @@
-"""_build_tier3_labels.py — Combine the warped Tier-3 nucleus prob maps into per-nucleus
-L/R binary masks (overlap ALLOWED — these nuclei are unresolvable at this resolution) plus a
-winner-take-all labeled volume for visualisation, and report volumes + pairwise overlap.
+"""_build_tier3_labels.py — warped Tier-3 nucleus prob maps -> per-nucleus L/R binary masks
+(overlap ALLOWED: these nuclei are unresolvable at this resolution) plus a winner-take-all
+labeled volume; reports volumes and pairwise overlap.
 """
 import os, sys, json
 import numpy as np
@@ -18,7 +18,7 @@ t1 = nib.load(os.path.join(M2M, "T1.nii.gz"))
 aff = t1.affine; shape = t1.shape
 vx = abs(np.linalg.det(aff[:3, :3]))
 
-# world-x of every voxel once (for the L/R split); errstate below silences BLAS matmul warnings
+# world-x of every voxel (for the L/R split); errstate silences BLAS matmul warnings
 ii, jj, kk = np.indices(shape)
 grid = np.vstack([ii.ravel(), jj.ravel(), kk.ravel(), np.ones(ii.size)]).astype(np.float64)
 with np.errstate(all="ignore"):

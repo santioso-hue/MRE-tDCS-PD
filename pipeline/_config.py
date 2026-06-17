@@ -1,9 +1,7 @@
 """Load the shared pipeline configuration (config/config.sh) into Python.
 
-Single source of truth for paths and the subject ID: the bash scripts source
-config/config.sh directly; the Python scripts read the same values through this
-helper, which sources the file in a subshell so ${VAR} expansions resolve exactly
-as bash would.
+Single source of truth for paths and the subject ID, shared with the bash
+scripts. Sources the file in a subshell so ${VAR} expansions resolve as bash would.
 
     from _config import cfg
     cfg["WORK_DIR"], cfg["SUBJECT"], cfg["QTI_DPS"], ...
@@ -12,8 +10,7 @@ import os
 import subprocess
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-# Default to config/config.sh; allow an override via PIPELINE_CONFIG so multiple subjects /
-# the cohort batch can each point at their own config without clobbering config/config.sh.
+# PIPELINE_CONFIG lets the cohort batch point each subject at its own config.
 _CONFIG_SH = os.environ.get("PIPELINE_CONFIG") or os.path.join(_ROOT, "config", "config.sh")
 
 

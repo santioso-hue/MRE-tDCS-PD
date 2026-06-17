@@ -1,19 +1,12 @@
 """
-qc_harness.py — Per-subject QC for the MD-dMRI tDCS pipeline.
-
-Runs AFTER the pipeline. One row per subject in qc_summary.csv with numeric sanity metrics +
-a PASS/FLAG per stage + an overall verdict. Overlay PNGs are generated ONLY for flagged
-subjects plus a random 10% sample (don't eyeball all 29). Beyond the absolute thresholds,
-ANY metric that is > 3 MAD from the cohort median is also flagged.
-
-  PRINCIPLE: an outlier is a QC signal to inspect/fix, not a data point to keep.
+qc_harness.py — post-pipeline per-subject QC: one qc_summary.csv row per subject with sanity
+metrics, a PASS/FLAG per stage, and an overall verdict. Beyond the absolute thresholds, any
+metric > 3 MAD from the cohort median is also flagged. An outlier is a signal to inspect/fix.
 
 Usage:
-  simnibs_python analysis/qc_harness.py                 # the subject in config/config.sh
-  simnibs_python analysis/qc_harness.py --cohort cohort.json   # [{"id","work","m2m"}...]
-  simnibs_python analysis/qc_harness.py --calibrate     # suggest cohort-percentile thresholds, then exit
-
-Outputs (gitignored):  qc_summary.csv,  qc_report/<id>_<stage>.png,  console summary.
+  simnibs_python analysis/qc_harness.py                       # the subject in config/config.sh
+  simnibs_python analysis/qc_harness.py --cohort cohort.json  # [{"id","work","m2m"}...]
+  simnibs_python analysis/qc_harness.py --calibrate           # suggest cohort-percentile thresholds, then exit
 """
 import os, sys, csv, json, glob, argparse
 import numpy as np
@@ -24,12 +17,10 @@ from _config import cfg  # noqa: E402
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _sims import sim_mesh, MODELS  # noqa: E402  (shared montage-aware mesh lookup)
 
-# thresholds
-# Absolute thresholds are STARTING POINTS seeded from a single-subject pilot (n=1). Items marked [PROV] are
-# provisional single-subject cutoffs — with one subject we cannot know the cohort spread, so these
-# should be recalibrated as a cohort PERCENTILE (e.g. flag below the 5th percentile) once 5-8
-# subjects are processed. The MAD>3 cohort-outlier pass in main() (active only at n>=4) is the real
-# per-subject guard; on a single subject only the absolute thresholds here are in force.
+# Absolute thresholds seeded from a single-subject pilot (n=1). [PROV] items are provisional
+# single-subject cutoffs to recalibrate as a cohort percentile (--calibrate) once 5-8 subjects
+# exist. The MAD>3 outlier pass in main() (active only at n>=4) is the real per-subject guard;
+# on one subject only these absolute thresholds are in force.
 THR = dict(
     charm_tet_q_med_min=0.10, charm_tet_q_badfrac_max=0.05,  # broadly-poor mesh / too many slivers
     tissue_plausible={"WM": (3e5, 7e5), "GM": (4e5, 8e5), "CSF": (5e4, 5e5),
@@ -64,8 +55,8 @@ def _roi_dir(reg):
 
 
 def _eigs_masked(t, sel):
-    """Ascending eigenvalues (N,3) of the 6-comp tensor `t`, built ONLY over the selected voxels.
-    Indexing t before assembling the matrices avoids a full-volume (X,Y,Z,3,3) ~740 MB allocation."""
+    """Ascending eigenvalues (N,3) of the 6-comp tensor `t` over the selected voxels only.
+    Indexing t first avoids a full-volume (X,Y,Z,3,3) ~740 MB allocation."""
     ts = t[sel]                                  # (N, 6)
     M = np.zeros((ts.shape[0], 3, 3))
     for a, (p, q) in enumerate([(0, 0), (0, 1), (0, 2), (1, 1), (1, 2), (2, 2)]):
@@ -92,13 +83,13 @@ def _vn_check(e, sigma0):
     """Semi-direct volume-normalization check on diffusion-tensor eigenvalues `e` (N,3, ascending).
 
     SimNIBS's vn step scales each voxel's D to sigma = D * sigma0 / geomean(eig D), forcing
-    geomean(eig sigma) == sigma0. We can't read SimNIBS's internal sigma, but we can verify D
-    SUPPORTS the normalization. Returns (degfrac, vn_err, sigma_hi, sigma_lo):
-      degfrac  - fraction of voxels that are NOT positive-definite (vn is undefined there). This MUST
-                 be read from the raw smallest eigenvalue e[:,0]; a clamped geom-mean is always > 0 and
-                 would silently report 0 (the bug this function exists to prevent).
-      vn_err   - |median(geomean(sigma)) - sigma0| / sigma0 over the valid voxels (~0 if vn holds).
-      sigma_hi/lo - 99th/1st percentile of the reconstructed conductivity eigenvalues (physiological?).
+    geomean(eig sigma) == sigma0. We can't read SimNIBS's internal sigma, only verify D supports it.
+    Returns (degfrac, vn_err, sigma_hi, sigma_lo):
+      degfrac  - fraction NOT positive-definite (vn undefined there). MUST be read from the raw
+                 smallest eigenvalue e[:,0]: a clamped geom-mean is always > 0 and would silently
+                 report 0 (the bug this function exists to prevent).
+      vn_err   - |median(geomean(sigma)) - sigma0| / sigma0 over valid voxels (~0 if vn holds).
+      sigma_hi/lo - 99th/1st percentile of reconstructed conductivity eigenvalues (physiological?).
     """
     good = np.isfinite(e).all(axis=1) & (e[:, 0] > 0)
     degfrac = float(np.mean(~good))
@@ -127,10 +118,10 @@ def qc_charm(P):
         msh = mesh_io.read_msh(mesh)
         m["charm_n_tet"] = int((msh.elm.elm_type == 4).sum())
         try:
-            # tetrahedra_quality() -> (radius_edge_ratio, inscribed/circumscribed ratio); the 2nd
-            # is the standard tet quality (1.0 = ideal, low = sliver). It's sized to ALL elements,
-            # so triangles are NaN -> keep finite values (the tets). Gate on median + sliver fraction,
-            # not min (a few slivers are normal and the FEM handles them).
+            # tetrahedra_quality() -> (radius_edge_ratio, inscribed/circumscribed ratio); [1] is the
+            # standard tet quality (1.0 = ideal, low = sliver), sized to ALL elements so triangles are
+            # NaN -> keep finite (the tets). Gate on median + sliver fraction, not min (a few slivers
+            # are normal and the FEM handles them).
             q = msh.tetrahedra_quality()[1].value
             qt = q[np.isfinite(q)]
             m["charm_tet_q_med"] = round(float(np.median(qt)), 3)
@@ -143,8 +134,8 @@ def qc_charm(P):
         m["charm_n_tet"] = np.nan; m["charm_tet_q_med"] = np.nan; m["charm_tet_q_badfrac"] = np.nan
         f.append(f"charm:mesh_read({type(e).__name__})")
     seg = _data(ft); vx = abs(np.linalg.det(_load(ft).affine[:3, :3]))
-    # SimNIBS charm final_tissues convention: bone is SPLIT into 7=compact + 8=spongy (the generic
-    # bone label 4 is EMPTY in charm output), so total bone = 7+8. WM=1, GM=2, CSF=3, scalp=5.
+    # SimNIBS charm final_tissues labels: WM=1, GM=2, CSF=3, scalp=5; bone is SPLIT into 7=compact +
+    # 8=spongy (generic bone label 4 is EMPTY in charm output), so total bone = 7+8.
     lut = {"WM": [1], "GM": [2], "CSF": [3], "bone": [7, 8], "scalp": [5]}
     for name, labs in lut.items():
         v = float(np.isin(seg, labs).sum() * vx); m[f"vol_{name}_mm3"] = round(v)
@@ -184,12 +175,12 @@ def qc_register(P):
     dm = _data(os.path.join(P["reg"], "dMRI_mask_T1.nii.gz"))
     if seg is None or dm is None:
         f.append("register:missing"); return m, f
-    # The registered dMRI brain mask is ~2x the SAMSEG brain (it includes neck/inferior FOV),
-    # so a Dice or centroid distance is size-confounded (caps ~0.62 / ~8 mm even when perfectly
-    # aligned). Use two size-INDEPENDENT signals instead:
+    # The registered dMRI brain mask is ~2x the SAMSEG brain (includes neck/inferior FOV), so Dice or
+    # centroid distance is size-confounded (caps ~0.62 / ~8 mm even when aligned). Use size-INDEPENDENT
+    # signals instead:
     #   (1) containment — does the dMRI FOV cover the brain? Catches gross misreg / FOV cutoff.
-    #   (2) CC reorientation — do corpus-callosum V1 point left-right? Catches tensor-reorient errors,
-    #       the highest-risk step (a flip/rotation collapses |V1_x| in the CC).
+    #   (2) CC reorientation — do corpus-callosum V1 point left-right? Catches tensor-reorient errors
+    #       (highest-risk step: a flip/rotation collapses |V1_x| in the CC).
     brain = np.isin(seg, [2, 41, 3, 42, 10, 49, 11, 50, 12, 51, 13, 52, 16, 17, 18, 53, 54, 26, 58, 28, 60])
     dmm = dm > 0
     m["reg_containment"] = round(float((dmm & brain).sum() / max(int(brain.sum()), 1)), 4)
@@ -206,8 +197,8 @@ def qc_register(P):
             m["reg_cc_v1x"] = round(float(np.median(v1x)), 3)   # median: robust to CC-edge partial volume
             if np.median(v1x) < THR["cc_v1x_min"]:
                 f.append("register:cc_not_LR")   # tensor reorientation failed
-    # (2b) cerebral-peduncle reorientation in the SimNIBS frame. CC V1x above is voxel-frame and the CC
-    # L-R signal is resolution-limited at 2.5 mm; the peduncle is a thick coherent S-I tract and is the
+    # (2b) cerebral-peduncle reorientation in the SimNIBS frame. CC V1x above is voxel-frame and the
+    # CC L-R signal is resolution-limited at 2.5 mm; the peduncle is a thick coherent S-I tract, the
     # reliable orientation gate. SimNIBS rotates the tensor by M = colnorm(affine).diag(-1,1,1 if det>0)
     # (cond_utils.cond2elmdata) before the FEM, so we score M@v1 against world-z (superior-inferior).
     ped = _data(os.path.join(_roi_dir(P["reg"]), "roi_Mesencephalon.nii.gz"))
@@ -223,17 +214,16 @@ def qc_register(P):
             m["reg_peduncle_siz"] = round(float(np.median(siz)), 3)
             if np.median(siz) < THR["peduncle_siz_min"]:
                 f.append("register:peduncle_not_SI")   # reorientation / registration off
-    # (3) edge alignment — gradient-magnitude correlation of the registered b0 vs T1 inside the brain.
-    # Containment catches gross cutoff and CC-V1 catches tensor rotation, but NEITHER catches a few-mm
-    # rigid shift that still covers the brain. A shift misaligns tissue boundaries, so |grad| correlation
-    # drops sharply (BBR principle): roughly 0.19 when aligned, about -40% at a 4 mm shift. (NMI on this b0/T1 pair is
-    # near the information floor and barely moves under a shift, so it is NOT used.)
+    # (3) edge alignment — gradient-magnitude correlation of registered b0 vs T1 inside the brain.
+    # Containment and CC-V1 miss a few-mm rigid shift that still covers the brain; a shift misaligns
+    # tissue boundaries, so |grad| correlation drops sharply (BBR principle): ~0.19 aligned, ~-40% at
+    # a 4 mm shift. (NMI on this b0/T1 pair sits near the information floor and barely moves, so unused.)
     try:
         from scipy import ndimage
         b0 = _data(os.path.join(P["reg"], "s0_T1.nii.gz"))   # registered dMRI S0 in T1 space
         t1 = _data(os.path.join(P["m2m"], "T1.nii.gz"))
         if b0 is not None and t1 is not None:
-            inner = ndimage.binary_erosion(brain, iterations=2)   # interior: avoid the mask boundary itself
+            inner = ndimage.binary_erosion(brain, iterations=2)   # avoid the mask boundary itself
 
             def _gmag(v):
                 gx, gy, gz = np.gradient(ndimage.gaussian_filter(v.astype(float), 1.0))
@@ -245,7 +235,7 @@ def qc_register(P):
             if gc < THR["reg_grad_corr_min"]:
                 f.append("register:edge_misaligned")   # [PROV] likely a few-mm shift
     except Exception:
-        pass   # scipy missing or b0 absent -> skip the optional third signal (containment+CC still gate)
+        pass   # scipy missing or b0 absent -> skip; containment+CC still gate
     return m, f
 
 
@@ -258,7 +248,7 @@ def qc_conductivity(P):
         path = os.path.join(P["work"], fname)
         if not os.path.exists(path):
             f.append(f"cond:{tag}_missing"); continue
-        t = _data(path)                                  # load the tensor ONCE; reuse for global + per-tissue
+        t = _data(path)                                  # load once; reuse for global + per-tissue
         naninf = bool(np.isnan(t).any() or np.isinf(t).any())
         m[f"cond_{tag}_nan"] = int(naninf)
         if naninf:
@@ -273,10 +263,10 @@ def qc_conductivity(P):
             f.append(f"cond:{tag}_neg_eig")
         ratio = eigs[:, 2] / np.maximum(eigs[:, 0], 1e-9)
         m[f"cond_{tag}_cap8_frac"] = round(float(np.mean(ratio > 8)), 4)
-        # Per-tissue mean diffusivity = geom-mean of the D eigenvalues. NOTE: tensor_MD_dMRI is the
-        # DIFFUSION tensor; SimNIBS applies the volume-normalization (geom-mean of sigma -> sigma0)
-        # internally at sim time, so sigma0 is verified INDIRECTLY via the E-field range in qc_sims.
-        # Here we sanity-check the tensor itself: positive, real MD-scale, not corrupt/zeroed.
+        # Per-tissue mean diffusivity = geom-mean of the D eigenvalues. tensor_MD_dMRI is the DIFFUSION
+        # tensor; SimNIBS applies vn (geom-mean sigma -> sigma0) at sim time, so sigma0 is verified
+        # INDIRECTLY via the E-field range in qc_sims. Here we sanity-check the tensor: positive, real
+        # MD-scale, not corrupt/zeroed.
         if seg is not None:
             for tis, labs in [("WM", SAMSEG["wm"]), ("GM", SAMSEG["gm"])]:
                 tm = np.isin(seg, labs) & valid
@@ -287,12 +277,8 @@ def qc_conductivity(P):
                 m[f"cond_{tag}_{tis}_md"] = round(md_med, 3)
                 if not (0.2 <= md_med <= 3.0):   # plausible mean diffusivity band (um^2/ms)
                     f.append(f"cond:{tag}_{tis}_md_implausible")
-                # semi-direct VN check
-                # SimNIBS's vn step scales this D per voxel to sigma = D * sigma0 / geomean(eig D),
-                # which forces geomean(eig sigma) == sigma0. We cannot read SimNIBS's internal sigma,
-                # but we CAN verify the input D supports the normalization: reconstruct sigma here and
-                # (a) assert it lands on the sigma0 anchor, (b) count voxels that BREAK vn (NOT positive-
-                # definite -> the scaling is undefined), (c) confirm the resulting sigma is physiological.
+                # semi-direct vn check (see _vn_check): reconstruct sigma from D and verify it lands on
+                # the sigma0 anchor, count voxels that break vn, confirm sigma is physiological.
                 s0 = SIGMA0.get(tis)
                 if s0:
                     degfrac, vn_err, sig_hi, sig_lo = _vn_check(e, s0)
@@ -347,10 +333,10 @@ def qc_rois(P):
 
 
 def qc_tier3(P):
-    # Tier-3 midbrain nuclei (CIT168/Pauli) are OVERLAP-ALLOWED, E-field-only, sampled as separate
-    # binary masks (07_build_tier3_nuclei.sh). Glob the per-nucleus masks directly; do NOT read
-    # tier3_labeled.nii.gz (winner-take-all int labels destroy the intended overlap). Flag empties;
-    # log pairwise overlap as an expected metric, not an error.
+    # Tier-3 midbrain nuclei (CIT168/Pauli) are OVERLAP-ALLOWED separate binary masks
+    # (07_build_tier3_nuclei.sh). Glob the per-nucleus masks; do NOT read tier3_labeled.nii.gz
+    # (winner-take-all int labels destroy the intended overlap). Pairwise overlap is expected, logged
+    # not flagged.
     m, f = {}, []
     t3 = os.path.join(P["reg"], "atlas_rois", "tier3")
     paths = sorted(glob.glob(os.path.join(t3, "roi_*.nii.gz")))
@@ -398,9 +384,8 @@ def resolve_subjects(args):
              "cc_mask": os.path.join(_roi_dir(cfg["REG_DIR"]), "roi_CC.nii.gz")}]
 
 
-# [PROV] / directional metrics -> which tail to guard once a cohort exists ("low" = flag below the
-# lower tail, "high" = flag above the upper tail). Used by --calibrate to turn single-subject cutoffs
-# into cohort percentiles, rather than freezing provisional single-subject thresholds at n=1.
+# Directional metrics -> which tail to guard once a cohort exists ("low" = flag below the lower tail,
+# "high" = above the upper). Used by --calibrate to turn single-subject cutoffs into cohort percentiles.
 CALIB = {"reg_grad_corr": "low", "reg_cc_v1x": "low", "reg_containment": "low",
          "dwi2cond_cc_fa": "low", "charm_tet_q_med": "low",
          "dwi2cond_csf_fa": "high", "charm_tet_q_badfrac": "high"}
@@ -459,9 +444,8 @@ def main():
         row["overall"] = "PASS" if all(row[f"{s}_PASS"] == "PASS" for s, _ in STAGES) else "FLAG"
         rows.append(row); stage_flags.append(flags_by_stage)
 
-    # cohort MAD outlier flagging (numeric metrics)
-    # INERT on single subjects: gated at n>=4 (MAD is meaningless below that), so a lone subject is
-    # judged ONLY by the absolute THR above. The `numeric` list is still built (safe, no-op) for the CSV.
+    # cohort MAD outlier flagging, gated at n>=4 (MAD is meaningless below that); a lone subject is
+    # judged ONLY by the absolute THR. The `numeric` list is still built for the CSV.
     numeric = sorted({k for r in rows for k, v in r.items() if isinstance(v, (int, float))})
     if len(rows) >= 4:
         for k in numeric:
@@ -493,7 +477,7 @@ def main():
             print(f"  PNG failed for {subjects[i]['id']}: {type(e).__name__}")
 
     # console summary
-    print(f"\n{'='*60}\nQC SUMMARY  ({len(rows)} subject(s)) -> {csv_path}")
+    print(f"\nQC summary ({len(rows)} subject(s)) -> {csv_path}")
     for i, r in enumerate(rows):
         if r["overall"] == "FLAG":
             fl = [f for s in stage_flags[i].values() for f in s]
@@ -511,7 +495,7 @@ def _overlay_png(P, png_dir):
     if t1 is None:
         return
     lab = _data(os.path.join(_roi_dir(P["reg"]), "roi_labels_meshspace.nii.gz"))  # recon-all ROI labels
-    # center the three slices on the ROI-label centroid so small ROIs (CC, mesencephalon) are in-plane
+    # center slices on the ROI-label centroid so small ROIs (CC, mesencephalon) are in-plane
     if lab is not None and (lab > 0).any():
         ci, cj, ck = (int(round(c)) for c in np.array(np.where(lab > 0)).mean(axis=1))
     else:

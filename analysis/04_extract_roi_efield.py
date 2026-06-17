@@ -1,22 +1,17 @@
 """
 04_extract_roi_efield.py — E-field per ROI per conductivity model, namespaced by subject and montage.
 
-ROIs: the parcellation masks in mesh space (build_rois.py -> registration/<roi_dir>/), loaded through
-_rois.py: cortical and white-matter lobes, corpus callosum, subcortical structures. Each ROI is sampled
-over every GM/WM element whose barycentre falls inside it; "WholeBrain" is all GM+WM elements.
-
-Tissue sampling: CHARM assigns the deep nuclei predominantly to WM (tag=1), not cortical GM (tag=2),
-so we sample both WM and GM — the volumetric tissues where anisotropic conductivity matters.
-
-Statistic: writes BOTH p95 (dosimetry headline, Huang 2017) and median (Olsson ROI convention) per model.
-06_cohort_stats.py picks the column it needs.
-
+Usage: ~/Applications/SimNIBS-4.6/bin/simnibs_python analysis/04_extract_roi_efield.py [--montage M1|DLPFC|...]
 Output (gitignored): analysis/results/<subject>/roi_efield_<montage>.csv
-  columns: ROI, ISO_p95, ISO_median, DTI_p95, DTI_median, MD-dMRI_p95, MD-dMRI_median
 
-Sim meshes are looked up as sim_<montage>_<token> (the montage-aware convention from 04_run_simulations)
-falling back to the legacy sim_<token> (= M1). Run per montage:
-  ~/Applications/SimNIBS-4.6/bin/simnibs_python analysis/04_extract_roi_efield.py [--montage M1|DLPFC|...]
+ROIs from _rois.py (build_rois.py -> registration/<roi_dir>/): cortical/WM lobes, corpus callosum,
+subcortical; sampled over every element whose barycentre falls inside. "WholeBrain" is all GM+WM.
+
+CHARM assigns the deep nuclei predominantly to WM (tag=1), not cortical GM (tag=2), so we sample both
+WM and GM — the volumetric tissues where anisotropic conductivity matters.
+
+Writes BOTH p95 (dosimetry headline, Huang 2017) and median (Olsson ROI convention) per model;
+06_cohort_stats.py picks the column it needs.
 """
 import os, sys, csv, argparse, glob
 import numpy as np
@@ -28,7 +23,7 @@ sys.path.insert(0, os.path.join(ROOT, "pipeline"))
 from _config import cfg  # noqa: E402
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _rois import load_labeled, assign_mesh_labels  # noqa: E402
-from _sims import MODELS, sim_mesh                   # noqa: E402  (shared montage-aware mesh lookup)
+from _sims import MODELS, sim_mesh                   # noqa: E402
 
 WDIR, REG = cfg["WORK_DIR"], cfg["REG_DIR"]
 TISSUE_TAGS = (1, 2)

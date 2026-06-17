@@ -1,8 +1,8 @@
 """_sims.py — shared lookup for the per-(montage x model) SimNIBS output meshes.
 
-04_run_simulations.py writes its results to sim_<montage>_<token>/ (e.g. sim_M1_MD_dMRI). This is the one
-place that knows the model -> (dir token, mesh-field suffix) map and the montage-aware path, so 04_extract,
-05 and qc_harness all resolve meshes identically (and fall back to the legacy sim_<token> = old M1 layout).
+Single source of the model -> (dir token, mesh-field suffix) map and the montage-aware path, so 04_extract,
+05 and qc_harness all resolve 04_run_simulations.py's sim_<montage>_<token>/ meshes identically (with a
+fallback to the legacy sim_<token> = old M1 layout).
 """
 import os
 

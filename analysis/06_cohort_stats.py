@@ -3,13 +3,12 @@
 
 Concatenates per-subject ROI E-field CSVs and computes, per ROI per montage:
 
-  H1 (PRIMARY, powered): paired MD-dMRI vs DTI |E| across all subjects (Wilcoxon signed-rank);
-     also MD-dMRI vs ISO. Effect size = matched-pairs rank-biserial r. This is the conductivity-model
-     question and uses every subject as its own control, so it is the powered primary.
+  H1 (PRIMARY, powered): paired MD-dMRI vs DTI |E| across all subjects (Wilcoxon signed-rank), also
+     MD-dMRI vs ISO. Each subject is its own control. Effect size = matched-pairs rank-biserial r.
 
-  H3 (EXPLORATORY): PD vs HC, mirroring Olsson 2025 exactly — each ROI value is adjusted for a linear
-     age effect (OLS residuals across all subjects), Mann-Whitney U on the residuals, Cohen's d. No
-     gender correction (matches Olsson).
+  H3 (EXPLORATORY): PD vs HC, mirroring Olsson 2025: each ROI value is adjusted for a linear age effect
+     (OLS residuals across all subjects), Mann-Whitney U on the residuals, Cohen's d. No gender
+     correction (matches Olsson).
 
   Age: partial Pearson between the ROI value and age, controlling for group (PD/HC).
 
@@ -109,8 +108,8 @@ def load_matrix(subjects, results_dir, montage, stat):
         if rois is None:
             rois = names
         elif names != rois:
-            # order matters for the matrix, so still compare as lists; but report the
-            # set-diff so the operator sees WHY (e.g. {'Brainstem'} vs {'Mesencephalon','Pons'}).
+            # order matters for the matrix; report the set-diff (e.g. {'Brainstem'} vs
+            # {'Mesencephalon','Pons'}) since a reorder gives the same diff.
             extra = set(names) - set(rois)
             missing = set(rois) - set(names)
             raise ValueError(
@@ -177,8 +176,8 @@ def main():
                              p_h1_dti=h1["DTI"][0], es_h1_dti=h1["DTI"][1],
                              p_h1_iso=h1["ISO"][0], es_h1_iso=h1["ISO"][1],
                              p_h3=p_h3, d_h3=d_h3, r_age=r_age, p_age=p_age))
-        # FDR-BH per (montage, family) across ROIs. Exclude the WholeBrain aggregate row
-        # from each correction so it does not inflate m; it gets a NaN q (bh_fdr passes NaN).
+        # FDR-BH per (montage, family) across ROIs. WholeBrain is excluded so it does not inflate m
+        # (passed as NaN -> NaN q).
         def fdr_no_wholebrain(key):
             ps = [(r[key] if r["roi"] != WHOLE_BRAIN else np.nan) for r in rows]
             return bh_fdr(ps)

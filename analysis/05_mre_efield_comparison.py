@@ -1,21 +1,15 @@
-"""
-05_mre_efield_comparison.py — Post-hoc cross-modal comparison: MRE mechanics vs MD-dMRI microstructure
-and the tDCS E-field, per ROI. Cohort MRE = stiffness + alpha (springpot exponent); no per-voxel
-confidence map, so QC is subject-level (GoodMRE + alphapositive) rather than confidence-gated.
+"""05_mre_efield_comparison.py -- per-ROI comparison: MRE mechanics vs MD-dMRI microstructure vs tDCS E-field.
 
-Purpose (see pipeline/conductivity_models_derivation.md):
-  (1) Consistency/QC — does the subject reproduce the known microstructure<->mechanics relationship
-      (MD vs stiffness negative, uFA vs stiffness positive)?  A data-quality check, not a new claim.
-  (2) Relevance map — does the conductivity model's IMPACT on the E-field (dE = E_MD-dMRI - E_DTI,
-      a local quantity where the montage largely cancels) land where Olsson flags tissue alteration?
+Two outputs (see pipeline/conductivity_models_derivation.md): (1) consistency QC -- does the subject
+reproduce MD vs stiffness negative, uFA vs stiffness positive? (2) relevance map -- does the model's
+E-field impact (dE = E_MD-dMRI - E_DTI, a local difference where the shared montage field cancels, so it
+isolates the conductivity model) land where Olsson flags tissue alteration? dE is NaN until the
+DTI arm (ParkMRE_DTI) lands.
 
-MRE gating: the cohort has no per-voxel confidence map (cohort QC is subject-level), so MRE maps
-(stiffness, alpha) are sampled over the brain EXCLUDING the CSF-adjacent cortical surface, where the
-Helmholtz inversion is unreliable (per Olsson). The script reports that gated result as primary and the
-UNGATED (no exclusion) result as a sensitivity row. The gate does NOT touch MD/uFA (QTI) or the E-field (FEM).
-The dE relevance map (item 2) needs the DTI arm (dE = E_MD-dMRI - E_DTI); it is NaN until ParkMRE_DTI lands.
-
-E-field statistic: MEDIAN per ROI (Olsson's ROI convention; item F); p95 reported as a sensitivity column.
+MRE gating: cohort has no per-voxel confidence map (QC is subject-level GoodMRE+alphapositive), so MRE
+maps are sampled over brain EXCLUDING the CSF-adjacent cortical surface where the Helmholtz inversion is
+unreliable (Olsson); gated is primary, ungated is the sensitivity row. The gate does NOT touch MD/uFA
+(QTI) or the E-field (FEM). E-field statistic is MEDIAN per ROI (Olsson convention); p95 is a sensitivity column.
 
 Run:  PIPELINE_CONFIG=<subject config.sh> simnibs_python analysis/05_mre_efield_comparison.py
 """
@@ -44,9 +38,8 @@ MESHES = {f"E_{mdl.replace('-', '')}": sim_mesh(WORK, MONTAGE, mdl, cfg["SUBJECT
 
 
 def build_gate():
-    """Cohort MRE gate. There is NO per-voxel confidence map (the cohort QC is subject-level:
-    GoodMRE + alphapositive), so we only drop the CSF-adjacent cortical surface, where the Helmholtz
-    inversion is unreliable (Olsson). Returns (gate, fraction of brain kept)."""
+    """MRE gate: no per-voxel confidence map, so drop only the CSF-adjacent cortical surface where the
+    Helmholtz inversion is unreliable (Olsson). Returns (gate, fraction of brain kept)."""
     seg = np.asarray(nib.load(os.path.join(M2M, "final_tissues.nii.gz")).dataobj)
     seg = seg[..., 0] if seg.ndim == 4 else seg
     brain = np.isin(seg, [1, 2, 3])
@@ -73,7 +66,6 @@ def extract_subject(gate):
     if os.path.exists(TENSOR):
         for roi, val in sample_tensor_aniso_medians(TENSOR, labeled, lab_aff, names).items():
             rows[roi]["cond_aniso"] = val
-    # (alpha, the springpot exponent, is sampled directly above as an MRE map -- no storage/loss arctan needed)
     # E-field per model: median (primary) + p95 (sensitivity) over GM+WM elements in the ROI
     for m, path in MESHES.items():
         if not path or not os.path.exists(path):
@@ -121,8 +113,8 @@ def main():
         rg, ng = corr(a, "stiffness")          # GATED column (CSF-adjacent cortex excluded)
         ru, nu = corr(a, "stiffness_ung")      # ungated sensitivity
         print(f"  {a+' vs stiffness':<26}{f'rho={rg:+.2f}(n={ng})':>14}{f'rho={ru:+.2f}(n={nu})':>14}")
-    print("\nGATED is primary (Olsson MRE handling); ungated is the sensitivity. Per subject (n=1 subject)")
-    print("-> across-region trend, not a statistical result. The cohort runner aggregates this per subject.")
+    print("\nGATED is primary (Olsson MRE handling); ungated is the sensitivity. n=1 subject: this is an "
+          "across-region trend, not a statistical result. The cohort runner aggregates this per subject.")
 
 
 if __name__ == "__main__":
