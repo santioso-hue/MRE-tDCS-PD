@@ -29,6 +29,18 @@ require_nonzero() {
     [ "${nz:-0}" -gt 0 ] 2>/dev/null || { echo "ERROR: $f has 0 non-zero voxels"; exit 1; }
 }
 
+assert_conformed_grid() {
+    # The MRE maps must live on the FreeSurfer-conformed orig grid (the delivered _ToT1 maps), the SAME
+    # grid the orig->charm transform is derived from. A raw scanner-grid map (e.g. an oblique 160x160x48
+    # stiffness volume) would be SILENTLY mis-placed by that transform, so fail loudly if the dims differ.
+    local map="$1" refimg="$2" fld m r
+    for fld in dim1 dim2 dim3; do
+        m="$(fslval "$map" "$fld" | tr -d '[:space:]')"
+        r="$(fslval "$refimg" "$fld" | tr -d '[:space:]')"
+        [ "$m" = "$r" ] || { echo "ERROR: $map is not on the conformed orig grid ($fld: $m vs $r). Point the config at the FreeSurfer-conformed _ToT1 MRE map, not the raw scanner NIfTI."; exit 1; }
+    done
+}
+
 T1_REF="$M2M_DIR/T1.nii.gz"
 ORIG="$DATA_DIR/recon/mri/orig.mgz"           # recon-all orig = the FS-conformed grid the MRE maps live on
 for f in "$T1_REF" "$ORIG" "$MRE_STIFFNESS" "$MRE_ALPHA"; do
@@ -41,6 +53,10 @@ echo "=== FS-conformed T1 -> charm T1 affine (orig.mgz, 6-DOF MI; same transform
 flirt -in orig_fs.nii.gz -ref "$T1_REF" -omat fs_to_charm.mat -dof 6 -cost mutualinfo \
       -searchrx -20 20 -searchry -20 20 -searchrz -20 20 -interp trilinear   # match build_rois' orig->charm
 [ -s fs_to_charm.mat ] || { echo "ERROR: orig->charm flirt failed"; exit 1; }
+
+echo "=== verify the MRE maps are on the conformed orig grid before applying the orig->charm transform ==="
+assert_conformed_grid "$MRE_STIFFNESS" orig_fs.nii.gz
+assert_conformed_grid "$MRE_ALPHA"     orig_fs.nii.gz
 
 echo "=== resample MRE stiffness + alpha (his FS-T1 grid) into charm T1 ==="
 flirt -in "$MRE_STIFFNESS" -ref "$T1_REF" -applyxfm -init fs_to_charm.mat -interp trilinear -out mre_stiffness_T1.nii.gz

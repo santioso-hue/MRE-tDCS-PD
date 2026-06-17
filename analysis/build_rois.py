@@ -150,6 +150,12 @@ def main():
     args = ap.parse_args()
     mri = os.path.join(args.fs_dir, "mri")
     aparc, ref, aparc_f = _load(mri, "aparc+aseg.mgz", "aparc.DKTatlas+aseg.mgz")
+    if aparc_f != "aparc+aseg.mgz":
+        raise SystemExit(
+            f"ERROR: LOBE_IDX is Desikan-indexed (needs aparc+aseg.mgz) but only {aparc_f} was found. "
+            f"The DKT atlas drops cortical indices 1/4/6/32/33, so applying LOBE_IDX to it would SILENTLY "
+            f"shrink the Frontal/Temporal lobes. Run recon-all to produce aparc+aseg.mgz (ParkMRE uses "
+            f"recon-all -all, which does), or remap LOBE_IDX to DKT indices before using the DKT atlas.")
     wmparc, _, _ = _load(mri, "wmparc.mgz")
     bs, _, bs_f = _load_brainstem(mri)
     print(f"aparc used: {aparc_f}    brainstem used: {bs_f}")

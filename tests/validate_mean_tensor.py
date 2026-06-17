@@ -66,6 +66,18 @@ def main():
     ang = np.degrees(np.arccos(np.clip(np.abs(np.sum(v1 * un, 1)), 0, 1)))
     check("v1(<D>) == cov.u (PD voxels)", np.median(ang[pdm]) < 2.0, f"median angle={np.median(ang[pdm]):.2f} deg")
 
+    # Negative control: the Mandel /sqrt2 de-scaling of the off-diagonals is load-bearing. Rebuild <D>
+    # WITHOUT it (off-diagonals left at sqrt2 magnitude) and confirm the principal axis then DISAGREES
+    # with cov.u, so a future regression that drops or doubles the sqrt2 cannot pass the checks above silently.
+    Dbad = D.copy()
+    Dbad[:, 0, 1] = Dbad[:, 1, 0] = D6[:, 3]
+    Dbad[:, 0, 2] = Dbad[:, 2, 0] = D6[:, 4]
+    Dbad[:, 1, 2] = Dbad[:, 2, 1] = D6[:, 5]
+    vbad = np.linalg.eigh(Dbad)[1][:, :, 2]
+    abad = np.degrees(np.arccos(np.clip(np.abs(np.sum(vbad * un, 1)), 0, 1)))
+    check("sqrt2 de-scaling is load-bearing (negative control)", np.median(abad[pdm]) > 1.0,
+          f"no-sqrt2 v1 disagrees with cov.u by median {np.median(abad[pdm]):.2f} deg (correct path is ~0)")
+
     pd = 100 * np.mean(pdm)
     degen = 100 * np.mean((l3 <= 1e-3) | (MD < 0.2))
     check("cumulant fit positive-definite", pd > 80,
