@@ -33,11 +33,12 @@ from _config import cfg  # noqa: E402
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _rois import load_labeled, _labels_on_grid, eigh_6comp, fa_from_evals, v1_angle_deg  # noqa: E402
 
-# ANGLE_FLOOR_DEG is the measured MEDIAN core-WM V1 angle between <D> and the independent single-shell DTI
-# (~8 deg; conductivity_models_derivation.md "DTI baseline"). It is the typical cross-method difference, NOT
-# an independent noise estimate, so the "equal" verdict is DESCRIPTIVE (an ROI at/below the typical
-# cross-method angle), not an objective pass/fail. Re-anchor to a test-retest / registration-jitter floor
-# if one becomes available.
+# ANGLE_FLOOR_DEG = registration/reorientation noise floor for the V1 angle, empirically grounded (not the
+# old circular "cross-method median"). A matched-registration test (2026-06-18, Control1+Patient1) moved the
+# DTI-vs-<D> V1 angle <2 deg when DTI was registered FA->T1 (dwi2cond) vs b0->T2 (matched to <D>), and standard
+# dwi2cond matched a hand-rolled affine to ~1 deg; reorientation adds a few deg, so ~8 deg is a conservative
+# floor. The OBSERVED core-WM divergence is ~13-28 deg (well above it), so 'diverge' is robust to this value;
+# the verdict is DESCRIPTIVE -- the per-ROI angle/ratios are the reported quantities.
 ANGLE_FLOOR_DEG = 8.0
 RATIO_TOL = 0.10            # chosen fractional tolerance on lam1/lam3 and lam2/lam3 for the "equal" verdict
 ANISO_FLOOR = 1.2          # below this DTI lam1/lam3 the ROI is ~isotropic: the ratio test is unstable and
