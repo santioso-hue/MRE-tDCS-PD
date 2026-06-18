@@ -183,8 +183,8 @@ every GM/WM element it contains, not a fixed-radius sphere.
   ohmic tissue conductivities is the main source of E-field variability, and MREIT is only weakly
   sensitive to brain anisotropy (Mosayebi-Samani et al. 2025, Imaging Neuroscience — SimNIBS team, same
   charm/dwi2cond/`'vn'` framework). The DTI↔MD-dMRI contrast here (~2% median at deep targets) sits in
-  that small-effect regime: the value of the QTI input is a more accurate tensor (estimation +
-  orientation), not a larger field.
+  that small-effect regime: the value of the QTI input is a more principled tensor estimate (kurtosis-aware
+  multi-shell estimation + orientation), expected to be less biased, not a larger field.
 - **Validation.** No in-vivo conductivity ground truth exists; the model is motivated by bias
   arguments, not direct validation. MR current-density imaging (MRCDI/MREIT; Gregersen 2024) is the
   planned validation route.

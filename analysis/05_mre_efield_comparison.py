@@ -2,9 +2,9 @@
 
 Two outputs (see pipeline/conductivity_models_derivation.md): (1) consistency QC -- does the subject
 reproduce MD vs stiffness negative, uFA vs stiffness positive? (2) relevance map -- does the model's
-E-field impact (dE = E_MD-dMRI - E_DTI, a local difference where the shared montage field cancels, so it
-isolates the conductivity model) land where Olsson flags tissue alteration? dE is NaN until the
-DTI arm (ParkMRE_DTI) lands.
+E-field impact (dE_model_pct = 100*(E_MD-dMRI - E_DTI)/E_DTI, a local PERCENT difference where the shared
+montage field cancels, so it isolates the conductivity model) land where Olsson flags tissue alteration?
+dE_model_pct is NaN until the DTI arm (ParkMRE_DTI) lands.
 
 MRE gating: cohort has no per-voxel confidence map (QC is subject-level GoodMRE+alphapositive), so MRE
 maps are sampled over brain EXCLUDING the CSF-adjacent cortical surface where the Helmholtz inversion is
@@ -101,7 +101,7 @@ def extract_subject(gate):
             rows[n][m + "_p95"] = float(np.percentile(ef[sel], 95)) if sel.any() else np.nan
     for r in rows.values():
         if np.isfinite(r.get("E_MDdMRI", np.nan)) and r.get("E_DTI", 0):
-            r["dE_model"] = 100 * (r["E_MDdMRI"] - r["E_DTI"]) / r["E_DTI"]
+            r["dE_model_pct"] = 100 * (r["E_MDdMRI"] - r["E_DTI"]) / r["E_DTI"]   # PERCENT, not V/m
         # microstructure divergence: uFA (microscopic anisotropy) minus FA(<D>) (macroscopic). Large in
         # crossing/dispersed-fiber voxels, where single-shell DTI FA conflates micro-anisotropy with
         # orientation dispersion. uFA is an EXPLANATION variable here, NOT a conductivity input.
@@ -118,8 +118,9 @@ def main():
 
     out_csv = os.path.join(os.path.dirname(__file__), "results", cfg["SUBJECT"], "mre_efield_per_roi.csv")
     os.makedirs(os.path.dirname(out_csv), exist_ok=True)
-    keys = ["stiffness", "stiffness_ung", "alpha", "MD", "uFA", "FA_meanD", "uFA_minus_FA", "cond_aniso",
-            "E_ISO", "E_DTI", "E_MDdMRI", "E_MDdMRI_p95", "dE_model", "tdiv_angle", "tdiv_dR1"]
+    keys = ["stiffness", "stiffness_ung", "alpha", "alpha_ung", "MD", "uFA", "FA_meanD", "uFA_minus_FA",
+            "cond_aniso", "E_ISO", "E_DTI", "E_MDdMRI", "E_ISO_p95", "E_DTI_p95", "E_MDdMRI_p95",
+            "dE_model_pct", "tdiv_angle", "tdiv_dR1"]
     with open(out_csv, "w", newline="") as f:
         w = csv.writer(f); w.writerow(["ROI"] + keys)
         for roi, r in rows.items():
@@ -135,7 +136,7 @@ def main():
 
     print(f"Consistency (n={len(rows)} ROIs, this subject). Expect MD vs stiffness NEG, uFA vs stiffness POS.")
     print(f"  {'pair':<26}{'GATED':>14}{'ungated':>14}")
-    for a in ["MD", "uFA", "cond_aniso", "alpha", "dE_model"]:
+    for a in ["MD", "uFA", "cond_aniso", "alpha", "dE_model_pct"]:
         rg, ng = corr(a, "stiffness")          # GATED column (CSF-adjacent cortex excluded)
         ru, nu = corr(a, "stiffness_ung")      # ungated sensitivity
         print(f"  {a+' vs stiffness':<26}{f'rho={rg:+.2f}(n={ng})':>14}{f'rho={ru:+.2f}(n={nu})':>14}")
@@ -145,7 +146,7 @@ def main():
     # disagree most (crossing/dispersed fibers). uFA is the EXPLANATION for where the more-principled <D>
     # tensor departs from DTI; it is NOT used as a conductivity input.
     print("\nExplanation layer (uFA-FA divergence vs the model effect; across ROIs, this subject):")
-    for b, lbl in [("dE_model", "dE_model = E_MD-dMRI - E_DTI"),
+    for b, lbl in [("dE_model_pct", "dE_model_pct = 100*(E_MD-dMRI - E_DTI)/E_DTI"),
                    ("tdiv_angle", "DTI-vs-<D> V1 angle (08)"),
                    ("tdiv_dR1", "delta(lam1/lam3) DTI-vs-<D> (08)")]:
         rho, nn = corr("uFA_minus_FA", b)

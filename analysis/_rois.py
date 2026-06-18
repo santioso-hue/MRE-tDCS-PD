@@ -15,6 +15,10 @@ import numpy as np
 import nibabel as nib
 
 TENSOR_ORDER = [(0, 0), (0, 1), (0, 2), (1, 1), (1, 2), (2, 2)]  # FSL dtifit 6-comp -> symmetric 3x3
+PD_EPS = 1e-3    # positive-definite floor on the smallest eigenvalue (um2/ms). Numeric anchor: 03's EPS=1e-3
+                 # reconstruction floor (qc_harness._vn_check shares the >0 intent, not the value). ASSUMES the
+                 # tensor is the um2/ms <D> from 03; do NOT pass an mm2/s dtifit tensor (08 rescales for that).
+FILL_EPS = 1e-6  # |Dxx| reject for empty/background voxels (distinct from the PD floor above)
 
 
 def eigh_6comp(t6, sel):
@@ -95,40 +99,38 @@ def sample_volume_medians(map_path, labeled, lab_affine, names, gate=None):
 
 
 def sample_tensor_aniso_medians(tensor_path, labeled, lab_affine, names):
-    """Median eigenvalue ratio lambda1/lambda3 of a 6-component symmetric tensor (order xx,xy,xz,yy,yz,zz)
-    within each ROI label, over POSITIVE-DEFINITE voxels only (degenerate voxels excluded, mirroring
-    qc_harness._vn_check)."""
+    """Median eigenvalue ratio lambda1/lambda3 of a 6-component symmetric tensor (order xx,xy,xz,yy,yz,zz,
+    in um2/ms) within each ROI label, over POSITIVE-DEFINITE voxels only (degenerate voxels excluded)."""
     img = nib.load(tensor_path)
     t = np.asarray(img.dataobj, dtype=float)            # (X,Y,Z,6)
     lab = _labels_on_grid(img, labeled, lab_affine)
     out = {}
     for k, n in names.items():
-        sel = (lab == k) & np.isfinite(t[..., 0]) & (np.abs(t[..., 0]) > 1e-6)
+        sel = (lab == k) & np.isfinite(t[..., 0]) & (np.abs(t[..., 0]) > FILL_EPS)
         if not sel.any():
             out[n] = np.nan
             continue
         ev, _ = eigh_6comp(t, sel)
-        # positive-definite gate on the raw smallest eigenvalue (um2/ms): mirrors qc_harness._vn_check
-        # and 03's EPS=1e-3 floor. Without it a near-zero lambda3 gives an explosive lambda1/lambda3.
-        pd = ev[:, 0] > 1e-3
+        # PD gate on the raw smallest eigenvalue (PD_EPS): without it a near-zero lambda3 explodes lambda1/lambda3.
+        pd = ev[:, 0] > PD_EPS
         out[n] = float(np.median(ev[pd, 2] / ev[pd, 0])) if pd.any() else np.nan
     return out
 
 
 def sample_tensor_fa_medians(tensor_path, labeled, lab_affine, names):
-    """Median FA of a 6-component tensor within each ROI, over positive-definite voxels (same gate as
-    sample_tensor_aniso_medians). Used by 05 for the FA(<D>) vs uFA divergence."""
+    """Median FA of a 6-component tensor (um2/ms) within each ROI, over positive-definite voxels (same gate
+    as sample_tensor_aniso_medians). Used by 05 for the FA(<D>) vs uFA divergence."""
     img = nib.load(tensor_path)
     t = np.asarray(img.dataobj, dtype=float)
     lab = _labels_on_grid(img, labeled, lab_affine)
     out = {}
     for k, n in names.items():
-        sel = (lab == k) & np.isfinite(t[..., 0]) & (np.abs(t[..., 0]) > 1e-6)
+        sel = (lab == k) & np.isfinite(t[..., 0]) & (np.abs(t[..., 0]) > FILL_EPS)
         if not sel.any():
             out[n] = np.nan
             continue
         ev, _ = eigh_6comp(t, sel)
-        pd = ev[:, 0] > 1e-3
+        pd = ev[:, 0] > PD_EPS
         out[n] = float(np.median(fa_from_evals(ev[pd]))) if pd.any() else np.nan
     return out
 

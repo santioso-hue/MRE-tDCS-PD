@@ -1,6 +1,7 @@
 #!/bin/bash
 # 07_build_tier3_nuclei.sh — Tier-3 small PD nuclei ROIs (SNc, SNr, VTA, RN, STN L/R) from
-# CIT168/Pauli, warped to subject space. Reuses the cache + 2009c->NLin6 affine from 06.
+# CIT168/Pauli, warped to subject space. Reuses the CIT168 atlas cache (2009c->NLin6 affine + pauli_prob)
+# staged under registration/atlas_rois/_atlas_cache/, a cluster/manual artifact not built by an in-repo script.
 #
 # Usage: bash analysis/07_build_tier3_nuclei.sh
 #
@@ -20,7 +21,7 @@ OUT="$REG_DIR/atlas_rois"; CACHE="$OUT/_atlas_cache"; T3="$OUT/tier3"; mkdir -p 
 MAT="$CACHE/2009c_to_nlin6.mat"; PAULI="$CACHE/pauli_prob.nii.gz"
 
 for f in "$MAT" "$PAULI" "$T1REF"; do
-  [ -f "$f" ] || { echo "ERROR: missing $f — run 06_build_atlas_rois.sh first."; exit 1; }
+  [ -f "$f" ] || { echo "ERROR: missing $f. Stage the CIT168 atlas cache (_atlas_cache/) and run charm for T1.nii.gz first; the cache is a cluster/manual artifact, not produced by any in-repo script."; exit 1; }
 done
 
 # ---- Tier-3 config: every tier-3 magic number lives here (PROB_THR is passed to _build_tier3_labels.py) ----
