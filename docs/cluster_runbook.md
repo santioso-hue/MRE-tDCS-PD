@@ -19,9 +19,13 @@ parcellation, the four montages, and the group statistics. Do NOT commit/push fr
 2. Verify the toolchain: SimNIBS 4.x, FSL, FreeSurfer (+ `segmentBS.sh`/`-brainstem-structures`), ANTs,
    MATLAB **with** the md-dmri toolbox, and the `neuro` conda env. Note module-load commands for the
    job scripts.
-3. **(item J) Data availability check across all 29:** for each subject confirm T1, T2, the single-shell
-   `sDTI_opt_80` (`.nii.gz/.bval/.bvec` - the DTI arm needs it per subject), the MD-dMRI `fit/` inputs,
-   and the MRE maps (stiffness/storage/loss/confidence). Tabulate gaps before launching anything.
+3. **(item J) Data availability check across all 29:** for each subject confirm T1, T2, the MD-dMRI `fit/`
+   inputs (linear/spherical corrected), and the MRE maps (stiffness/storage/loss/confidence). For the DTI
+   arm, confirm the independent single-shell scan under `DTI/ParkMREDTI_Backup/<subject>/`: the loader takes
+   `eddy_corrected.nii.gz` + `eddy_corrected.eddy_rotated_bvecs`, and bvals are synthesized from the bvec at
+   b=`DTI_BVALUE` (so no `.bval` is staged). run_cohort matches the drifted DTI dir name to the MUDI id by a
+   normalised key and logs the match per subject; a subject with no match runs ISO+MD-dMRI only (non-fatal).
+   Tabulate gaps before launching anything.
 4. Build `config/cohort.json` from `config/cohort.example.json`: `{id, group(PD/HC), age, work, m2m, fit}`
    for all 29, montages `["M1","DLPFC","HD_M1","HD_DLPFC"]`.
 
@@ -39,7 +43,7 @@ the long pole, so launch it first.**
 |---|---|---|---|---|
 | 1 | Head model | `pipeline/00_charm.sh` | T1, T2 | 1–2 h |
 | 2 | Parcellation | `recon-all -all` then `segmentBS.sh` | T1 | **6–12 h** (long pole) |
-| 3 | DTI conductivity | `pipeline/01_dwi2cond.sh` | m2m (1) | ~30 min |
+| 3 | DTI conductivity (conditional) | `pipeline/01_dwi2cond.sh` | m2m (1), a matched ParkMRE_DTI scan (sets `DTI_DWI`) | ~30 min; skipped with no DTI scan -> 2-arm subject |
 | 4 | QTI covariance fit | `pipeline/run_qti_cov_cohort.m` (via run_qti_cov_cohort.sh) | fit/ inputs | 10–30 min |
 | 5 | Build ⟨D⟩ maps | `pipeline/prepare_dmri_tensor.py` | (4) | fast (invoked automatically by stage 6, step 1) |
 | 6 | Register dMRI→T1 | `pipeline/02_register_dmri_to_T1.sh` | m2m (1), (5) | S0-driven 12-DOF affine, ~1 min; emits s0_T1/FA_T1 (QC), MD_T1/uFA_T1, lam{1,2,3}_T1, tensor_triaxial_T1, v1_T1, dMRI_mask_T1 |
@@ -54,6 +58,12 @@ the long pole, so launch it first.**
 Ordering within a subject: {1,2} parallel → {3,4,5,6,7} and {8,9} and {10} → 11 → {12,13}.
 Parallelize across subjects with a SLURM array (one array task per subject); recon-all (2) can be its own
 earlier array so its 6–12 h overlaps everything else.
+
+In practice the drivers run these stages for you: `pipeline/run_subject.sh` orchestrates one subject in this
+order (charm guarded on `FORCE_CHARM`/existing model; the DTI arm + stage 08 tensor divergence run only when
+`DTI_DWI` is set), and `pipeline/run_cohort.sh` stages each subject from the share and loops run_subject. The
+cohort loop is resumable: it skips any subject that already has `results/<id>/metrics.json` (set `REDO=1` to
+force). recon-all (2) is consumed from the precomputed `ReconAlls/` on the share.
 
 ## Phase 3 - QC (item I.12), after 5–8 subjects are through
 `simnibs_python analysis/qc_harness.py --cohort config/cohort.json --calibrate` - recalibrates thresholds

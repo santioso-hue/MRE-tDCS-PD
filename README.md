@@ -63,10 +63,15 @@ simnibs_python analysis/build_rois.py --fs_dir <recon-all_subject_dir>          
 simnibs_python analysis/04_extract_roi_efield.py                          # per-ROI E-field table
 ```
 
+`pipeline/run_subject.sh` orchestrates the whole sequence above for one subject (adding the DTI arm and
+`08_tensor_divergence.py` when a DTI scan is wired via `DTI_DWI`), and `pipeline/run_cohort.sh` stages each
+subject from the share and loops it across the cohort (resumable; skips subjects that already finished).
+
 Quality control and the post-hoc MRE comparison:
 
 ```bash
 simnibs_python analysis/qc_harness.py            # per-subject QC across all stages
+simnibs_python analysis/08_tensor_divergence.py  # DTI vs <D> tensor divergence per ROI (when DTI is wired)
 simnibs_python analysis/qc_figures.py            # |E| overlay + MD-dMRI-minus-DTI difference figures
 bash           pipeline/05_register_mre_to_T1.sh # MRE maps -> T1 (post-hoc)
 ```

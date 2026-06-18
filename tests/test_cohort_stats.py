@@ -29,6 +29,9 @@ def build(tmp, seed=0):
         md[1] = dti[1] + rng.normal(0, 0.05)                    # H1null: random sign
         md[2] = 0.30 + 0.06 * pd[k] + 0.004 * (age[k] - 65) + rng.normal(0, 0.02)  # H3: PD>HC + age
         md[3] = 0.30 + rng.normal(0, 0.02)                      # null
+        if k == 0:
+            md[2] = np.nan                                      # one NaN subject (e.g. empty tier-3 ROI):
+            # pre-fix this nulled the whole ROI's H3/age; post-fix the finite mask recovers it from the rest
         d = os.path.join(res, s["id"]); os.makedirs(d, exist_ok=True)
         with open(os.path.join(d, "roi_efield_M1.csv"), "w", newline="") as f:
             w = csv.writer(f)
@@ -62,6 +65,8 @@ def main():
            f"rank-biserial={out['ROI_H1pos']['es_h1_dti']:.2f}")
         ck("H1 noisy ROI is NOT significant", not (out["ROI_H1null"]["q_h1_dti"] < 0.05),
            f"q={out['ROI_H1null']['q_h1_dti']:.3g}")
+        ck("H3 survives a NaN subject (finite-mask, not all-NaN)", np.isfinite(out["ROI_H3pos"]["q_h3"]),
+           f"q_h3={out['ROI_H3pos']['q_h3']:.3g} finite despite 1 NaN subject")
         ck("H3 planted PD>HC is significant", out["ROI_H3pos"]["q_h3"] < 0.05,
            f"q={out['ROI_H3pos']['q_h3']:.3g}, d={out['ROI_H3pos']['d_h3']:.2f}")
         ck("H3 Cohen's d positive (PD>HC)", out["ROI_H3pos"]["d_h3"] > 0.5,

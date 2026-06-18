@@ -7,7 +7,7 @@
 # reorientation (the standard SimNIBS path, no reimplementation):
 #   dtifit --save_tensor   ->   dwi2cond --all --regmthd=12dof <subjectID> <DTI_tensor>
 #
-# Why this path (validated 2026-06-18 on PD_20230125_Control1 + Patient1):
+# Why this path (validated 2026-06-18 on two held-out subjects, one HC + one PD):
 #  * dwi2cond --help: a preprocessed dtifit --save_tensor tensor is accepted and only coregistered to T1,
 #    so the eddy/distortion steps our data does not need are skipped.
 #  * --regmthd=12dof (affine). NOT the nonlinear default (fnirt over-warps the corrected data) and NOT the
@@ -37,8 +37,10 @@ TENSOR_OUT="$M2M/DTI_coregT1_tensor.nii.gz"
 [ -d "$M2M" ] || { echo "ERROR: $M2M not found -- run 00_charm.sh first."; exit 1; }
 : "${DTI_DWI:?set DTI_DWI to the single-shell DTI DWI (see config.example.sh)}"
 : "${DTI_BVEC:?set DTI_BVEC to the (eddy-rotated) bvecs (see config.example.sh)}"
-for f in "$DTI_DWI" "$DTI_BVEC"; do [ -f "$f" ] || { echo "ERROR: missing $f"; exit 1; }; done
+# Idempotent: a built tensor short-circuits BEFORE the source-file check, so re-runs (and cohort
+# re-runs over already-done subjects) do not need the raw DTI scan to still be mounted.
 [ -f "$TENSOR_OUT" ] && { echo "DTI tensor exists, skipping (delete to force): $TENSOR_OUT"; exit 0; }
+for f in "$DTI_DWI" "$DTI_BVEC"; do [ -f "$f" ] || { echo "ERROR: missing $f"; exit 1; }; done
 
 FITDIR="$WORK_DIR/dti_arm"; mkdir -p "$FITDIR"
 NV="$(fslnvols "$DTI_DWI")"

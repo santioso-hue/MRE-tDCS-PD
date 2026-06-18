@@ -94,12 +94,15 @@ def rank_biserial_paired(a, b):
 
 
 def load_matrix(subjects, results_dir, montage, stat):
-    """Return rois (list), and {model: array[n_subj, n_roi]}, aligned to subjects, for the given stat."""
-    rois, per_subj = None, {m: [] for m in MODELS}
+    """Return rois (list), {model: array[n_kept, n_roi]}, and the kept-subject list (those with a CSV).
+    A subject missing its per-montage CSV is skipped with a warning, not fatal, so a partial cohort (e.g.
+    27/29 succeeded overnight) still aggregates; raises only if NO subject has a CSV for this montage.
+    The kept list lets the caller re-align the parallel group/age arrays to the surviving subjects."""
+    rois, per_subj, kept, dropped = None, {m: [] for m in MODELS}, [], []
     for s in subjects:
         path = os.path.join(results_dir, s["id"], f"roi_efield_{montage}.csv")
         if not os.path.exists(path):
-            raise FileNotFoundError(f"missing {path} (run the cohort runner for {s['id']}/{montage})")
+            dropped.append(s["id"]); continue
         rows = {}
         with open(path) as f:
             for row in csv.DictReader(f):
@@ -118,7 +121,13 @@ def load_matrix(subjects, results_dir, montage, stat):
                 f"(or same ROIs in a different order)")
         for m in MODELS:
             per_subj[m].append([float(rows[r][f"{m}_{stat}"]) for r in rois])
-    return rois, {m: np.asarray(v, float) for m, v in per_subj.items()}
+        kept.append(s)
+    if not kept:
+        raise FileNotFoundError(f"no subject has results/<id>/roi_efield_{montage}.csv "
+                                f"(run the cohort runner for {montage})")
+    if dropped:
+        print(f"  [{montage}] skipped {len(dropped)} subject(s) with no CSV: {', '.join(dropped)}")
+    return rois, {m: np.asarray(v, float) for m, v in per_subj.items()}, kept
 
 
 def main():
@@ -131,22 +140,27 @@ def main():
     with open(args.cohort) as f:
         cohort = json.load(f)
     subjects = cohort["subjects"]
-    group = np.array([1 if s["group"] == "PD" else 0 for s in subjects])   # 1=PD, 0=HC
-    age = np.array([float(s["age"]) for s in subjects])
-    n_pd, n_hc = int(group.sum()), int((1 - group).sum())
-    print(f"Cohort: {len(subjects)} subjects ({n_pd} PD, {n_hc} HC). Statistic: {args.stat}")
+    n_pd_all = sum(1 for s in subjects if s["group"] == "PD")
+    print(f"Cohort: {len(subjects)} subjects ({n_pd_all} PD, {len(subjects) - n_pd_all} HC). "
+          f"Statistic: {args.stat}")
 
     for montage in cohort["montages"]:
-        rois, mats = load_matrix(subjects, args.results, montage, args.stat)
+        rois, mats, kept = load_matrix(subjects, args.results, montage, args.stat)
+        group = np.array([1 if s["group"] == "PD" else 0 for s in kept])   # 1=PD, 0=HC, aligned to kept
+        age = np.array([float(s["age"]) for s in kept])
+        print(f"  [{montage}] aggregating {len(kept)} subjects "
+              f"({int(group.sum())} PD, {int((1 - group).sum())} HC)")
         md = mats["MD-dMRI"]
         rows = []
         for j, roi in enumerate(rois):
             v = md[:, j]
+            fin = np.isfinite(v)
             # H1 paired (every subject as own control); NaN-safe over finite pairs only
-            h1 = {}
+            h1, n_h1 = {}, {}
             for ref in ("DTI", "ISO"):
                 a, b = md[:, j], mats[ref][:, j]
                 m = np.isfinite(a) & np.isfinite(b)
+                n_h1[ref] = int(m.sum())
                 if m.sum() < MIN_PAIRS:
                     print(f"  [{montage}] {roi}: H1 MD-vs-{ref} skipped, "
                           f"only {int(m.sum())} finite pairs (< {MIN_PAIRS})")
@@ -157,22 +171,31 @@ def main():
                 except ValueError:
                     p = np.nan
                 h1[ref] = (p, rank_biserial_paired(a[m], b[m]))
-            # H3 PD vs HC on age-adjusted residuals; over finite residuals only
-            resid = residualize(v, age)
-            rp, rh = resid[group == 1], resid[group == 0]
-            rp, rh = rp[np.isfinite(rp)], rh[np.isfinite(rh)]
-            if rp.size >= 1 and rh.size >= 1 and len(set(v)) > 1:
-                try:
-                    _, p_h3 = stats.mannwhitneyu(rp, rh, alternative="two-sided")
-                except ValueError:
-                    p_h3 = np.nan
-                d_h3 = cohens_d(rp, rh) if rp.size >= 2 and rh.size >= 2 else np.nan
+            # H3 PD vs HC on age-adjusted residuals. Finite-mask v/age/group together FIRST: a single NaN
+            # subject would otherwise make lstsq return an all-NaN beta and null the whole ROI (the tier-3
+            # nuclei, which 04 legitimately writes NaN for when empty, are exactly the affected ROIs).
+            vf, agef, gf = v[fin], age[fin], group[fin]
+            if vf.size >= MIN_PAIRS and len(set(vf)) > 1:
+                resid = residualize(vf, agef)
+                rp, rh = resid[gf == 1], resid[gf == 0]
+                if rp.size >= 1 and rh.size >= 1:
+                    try:
+                        _, p_h3 = stats.mannwhitneyu(rp, rh, alternative="two-sided")
+                    except ValueError:
+                        p_h3 = np.nan
+                    d_h3 = cohens_d(rp, rh) if rp.size >= 2 and rh.size >= 2 else np.nan
+                else:
+                    p_h3, d_h3 = np.nan, np.nan
             else:
                 p_h3, d_h3 = np.nan, np.nan
-            # Age, controlling for group
-            r_age, p_age = partial_pearson(v, age, group.reshape(-1, 1))
+            # Age, controlling for group; finite-masked for the same reason
+            if vf.size >= 4:
+                r_age, p_age = partial_pearson(vf, agef, gf.reshape(-1, 1))
+            else:
+                r_age, p_age = np.nan, np.nan
             rows.append(dict(roi=roi,
-                             md_med=float(np.median(v)),
+                             md_med=float(np.nanmedian(v)) if fin.any() else np.nan,
+                             n_h1_dti=n_h1["DTI"], n_h1_iso=n_h1["ISO"],
                              p_h1_dti=h1["DTI"][0], es_h1_dti=h1["DTI"][1],
                              p_h1_iso=h1["ISO"][0], es_h1_iso=h1["ISO"][1],
                              p_h3=p_h3, d_h3=d_h3, r_age=r_age, p_age=p_age))
@@ -188,9 +211,17 @@ def main():
         for i, r in enumerate(rows):
             r.update(q_h1_dti=q_h1_dti[i], q_h1_iso=q_h1_iso[i], q_h3=q_h3[i], q_age=q_age[i])
 
+        # DTI coverage: a subject with no matched DTI scan runs ISO+MD-dMRI only -> NaN DTI column -> fewer
+        # MD-vs-DTI pairs. Surface it so the primary hypothesis is not silently underpowered.
+        n_dti_cov = max((r["n_h1_dti"] for r in rows), default=0)
+        if n_dti_cov < len(kept):
+            print(f"  [{montage}] WARNING: DTI arm present for at most {n_dti_cov}/{len(kept)} subjects "
+                  f"-> H1 MD-vs-DTI underpowered where DTI is absent")
+
         os.makedirs(args.results, exist_ok=True)
         out = os.path.join(args.results, f"cohort_stats_{montage}_{args.stat}.csv")
-        cols = ["roi", "md_med", "p_h1_dti", "q_h1_dti", "es_h1_dti", "p_h1_iso", "q_h1_iso", "es_h1_iso",
+        cols = ["roi", "md_med", "n_h1_dti", "p_h1_dti", "q_h1_dti", "es_h1_dti",
+                "n_h1_iso", "p_h1_iso", "q_h1_iso", "es_h1_iso",
                 "p_h3", "q_h3", "d_h3", "r_age", "p_age", "q_age"]
         with open(out, "w", newline="") as f:
             w = csv.writer(f); w.writerow(cols)

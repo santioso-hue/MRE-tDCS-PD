@@ -1,6 +1,7 @@
 #!/bin/bash
-# run_subject.sh -- run the per-subject pipeline (ISO + MD-dMRI) for one subject, then check the
-# outputs reproduce the recorded baseline. Also the unit the cohort scale-out calls per subject.
+# run_subject.sh -- run the per-subject pipeline (ISO + MD-dMRI, plus the DTI arm when a DTI scan is wired
+# in the config) for one subject, then check the outputs reproduce the recorded baseline. Also the unit the
+# cohort scale-out calls per subject.
 #
 # Usage: PIPELINE_CONFIG=<subject config.sh> bash pipeline/run_subject.sh [--from fit|charm] [--montage M1]
 set -euo pipefail
@@ -44,16 +45,23 @@ stage() { echo; echo ">>> $*"; }
 record_env; echo "wrote $RESULTS/provenance.txt"
 
 stage "unit tests"
-for t in test_lobe_grouping test_cohort_stats test_qc_harness; do
+for t in test_lobe_grouping test_cohort_stats test_qc_harness test_tensor_divergence; do
     "$SP" "$REPO/tests/$t.py"
 done
 
 if [ "$FROM" = "charm" ]; then
     : "${CHARM_T1:?set CHARM_T1 in the config for --from charm}"
     : "${CHARM_T2:?set CHARM_T2 in the config for --from charm}"
-    stage "00 charm head model"
-    rm -rf "$M2M_DIR"                              # regenerate from scratch (no-op for a fresh subject)
-    bash "$REPO/pipeline/00_charm.sh" "$SUBJECT" "$CHARM_T1" "$CHARM_T2" "$WORK_DIR"
+    # Build charm only when the head model is absent (final_tissues.nii.gz is its completion marker) or
+    # FORCE_CHARM=1. A bare cohort re-run after a crash then keeps the hours-long charm of done subjects
+    # instead of rebuilding it from scratch.
+    if [ ! -f "$M2M_DIR/final_tissues.nii.gz" ] || [ "${FORCE_CHARM:-0}" = "1" ]; then
+        stage "00 charm head model"
+        rm -rf "$M2M_DIR"                          # rebuild from scratch (set FORCE_CHARM=1 to force)
+        bash "$REPO/pipeline/00_charm.sh" "$SUBJECT" "$CHARM_T1" "$CHARM_T2" "$WORK_DIR"
+    else
+        stage "00 charm head model (exists, skipping; FORCE_CHARM=1 to rebuild)"
+    fi
 fi
 
 stage "recon-all ROIs"
@@ -71,9 +79,23 @@ bash "$REPO/pipeline/02_register_dmri_to_T1.sh"
 stage "build conductivity tensor"
 "$SP" "$REPO/pipeline/03_build_conductivity_tensor.py"
 
-stage "simulations ISO + MD-dMRI (DTI gated)"
-rm -rf "$WORK_DIR/sim_${MONTAGE}_ISO" "$WORK_DIR/sim_${MONTAGE}_MD_dMRI"
-"$SP" "$REPO/pipeline/04_run_simulations.py" --montage "$MONTAGE" --model ISO MD-dMRI
+# DTI arm: only when a DTI scan is wired in the config (run_cohort stages it when ParkMRE_DTI is present).
+# Build the dwi2cond tensor in m2m and score its divergence from <D> (08); the DTI sim joins ISO+MD-dMRI
+# below so the single extract call picks up all three.
+MODELS_RUN=(ISO MD-dMRI)
+SIM_DIRS=("$WORK_DIR/sim_${MONTAGE}_ISO" "$WORK_DIR/sim_${MONTAGE}_MD_dMRI")
+if [ -n "${DTI_DWI:-}" ]; then
+    stage "DTI tensor (standard dwi2cond)"
+    bash "$REPO/pipeline/01_dwi2cond.sh"
+    stage "tensor divergence DTI vs <D>"
+    "$SP" "$REPO/analysis/08_tensor_divergence.py"
+    MODELS_RUN+=(DTI)
+    SIM_DIRS+=("$WORK_DIR/sim_${MONTAGE}_DTI")
+fi
+
+stage "simulations ${MODELS_RUN[*]}"
+rm -rf "${SIM_DIRS[@]}"
+"$SP" "$REPO/pipeline/04_run_simulations.py" --montage "$MONTAGE" --model "${MODELS_RUN[@]}"
 
 stage "extract ROI E-field"
 "$SP" "$REPO/analysis/04_extract_roi_efield.py" --montage "$MONTAGE"

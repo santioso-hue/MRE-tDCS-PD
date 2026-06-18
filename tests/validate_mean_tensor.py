@@ -43,9 +43,10 @@ def main():
     print(f"PART A - QTI covariance mean-tensor validation ({n:,} brain voxels)")
     checks = []
 
-    def check(name, ok, detail):
-        checks.append(bool(ok))
-        print(f"  [{'PASS' if ok else 'FAIL'}] {name}: {detail}")
+    def check(name, ok, detail, gate=True):
+        if gate:
+            checks.append(bool(ok))
+        print(f"  [{'PASS' if ok else 'FAIL'}{'' if gate else ' info'}] {name}: {detail}")
 
     e_md = np.abs((l1 + l2 + l3) / 3.0 - MD)
     check("trace(<D>)/3 == cov.MD", np.median(e_md) < 1e-3, f"median|err|={np.median(e_md):.2e} um2/ms")
@@ -74,8 +75,11 @@ def main():
 
     pd = 100 * np.mean(pdm)
     degen = 100 * np.mean((l3 <= 1e-3) | (MD < 0.2))
-    check("cumulant fit positive-definite", pd > 80,
-          f"{pd:.1f}% PD; {degen:.1f}% degenerate (non-PD / MD<0.2) -> isotropic fallback in 03")
+    # PD fraction is a DATA-QUALITY readout, not a correctness gate: 03 leaves non-PD voxels as scalar
+    # isotropic sigma0 by design, so a lower-PD subject still yields a valid mixed tensor field. Reported,
+    # not gated, so a borderline (e.g. pathological) subject is not silently dropped from the cohort.
+    check("cumulant fit positive-definite (informational)", pd > 80,
+          f"{pd:.1f}% PD; {degen:.1f}% degenerate (non-PD / MD<0.2) -> isotropic fallback in 03", gate=False)
 
     aniso = l1[pdm] / np.maximum(l3[pdm], 1e-6)
     print(f"\n  AUTHORITATIVE: base anisotropy median lambda1/lambda3 of <D> (PD voxels) = {np.median(aniso):.2f}")

@@ -69,9 +69,13 @@ be logged so noisier or atrophied subjects do not silently take the prolate bran
 
 ## DTI model (baseline)
 
-A separate single-shell acquisition (`sDTI_opt_80`, 80 directions, b≈1500, same subject and session)
-is fitted with FSL `dtifit` and registered to T1 with `dwi2cond --all` (eddy correction, nonlinear
-FA→T1 registration, vecreg tensor reorientation) - the standard SimNIBS anisotropy path. Its
+A separate single-shell acquisition (`sDTI_opt_80`, 80 directions, b≈1500, same subject and session),
+already eddy/topup-corrected, is fitted with FSL `dtifit --save_tensor`; the tensor is handed to
+`dwi2cond --all --regmthd=12dof` for its standard T1 coregistration + vecreg reorientation - the documented
+SimNIBS anisotropy path (dwi2cond accepts a preprocessed dtifit tensor as input). The 12-DoF affine, not
+dwi2cond's fnirt default, is the option the SimNIBS docs prescribe when "the distortion correction during
+preprocessing is good enough"; our registration bake-off confirmed fnirt over-warps the corrected data
+(~5 mm) without improving alignment. Its
 limitation is intrinsic to single-shell DTI: the mono-exponential fit averages over all fibre
 orientations in a voxel and is biased by non-Gaussian diffusion (kurtosis), so crossing fibres and
 dispersion depress the measured anisotropy.

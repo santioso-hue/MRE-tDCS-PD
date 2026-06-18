@@ -34,7 +34,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _rois import load_labeled, _labels_on_grid, eigh_6comp, fa_from_evals, v1_angle_deg  # noqa: E402
 
 # ANGLE_FLOOR_DEG = registration/reorientation noise floor for the V1 angle, empirically grounded (not the
-# old circular "cross-method median"). A matched-registration test (2026-06-18, Control1+Patient1) moved the
+# old circular "cross-method median"). A matched-registration test (2026-06-18, two held-out subjects) moved the
 # DTI-vs-<D> V1 angle <2 deg when DTI was registered FA->T1 (dwi2cond) vs b0->T2 (matched to <D>), and standard
 # dwi2cond matched a hand-rolled affine to ~1 deg; reorientation adds a few deg, so ~8 deg is a conservative
 # floor. The OBSERVED core-WM divergence is ~13-28 deg (well above it), so 'diverge' is robust to this value;
