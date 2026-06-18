@@ -1,5 +1,5 @@
 #!/bin/bash
-# run_qti_cov_cohort.sh — drive the cohort QTI covariance fit (run_qti_cov_cohort.m) for one subject.
+# run_qti_cov_cohort.sh - drive the cohort QTI covariance fit (run_qti_cov_cohort.m) for one subject.
 #
 # Input:  <subject_dir>/dmri/ (linear_corrected + spherical_corrected + bval/bvec)
 # Output: <subject_dir>/fit/qti_cov/{cov_mfs.mat, cov_dps.mat} (oriented <D>)

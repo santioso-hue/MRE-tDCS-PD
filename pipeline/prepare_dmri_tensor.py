@@ -1,5 +1,5 @@
 """
-prepare_dmri_tensor.py — reconstruct the QTI covariance mean tensor <D> and supporting maps in dMRI
+prepare_dmri_tensor.py - reconstruct the QTI covariance mean tensor <D> and supporting maps in dMRI
 space, ready for registration to T1. Called by 02_register_dmri_to_T1.sh.
 
 Inputs from run_qti_cov_cohort.m (md-dmri `dtd_covariance` fit, constrained/heteroscedasticity-
@@ -91,7 +91,7 @@ print(f"  trace/3 vs cov.MD median|err|={np.median(err):.4f} um2/ms; "
       f"degenerate->isotropic {100 * np.mean(degen):.1f}%; "
       f"median lambda {np.median(l1):.3f}/{np.median(l2):.3f}/{np.median(l3):.3f}")
 assert np.median(err) < 1e-2, "trace/3 != cov.MD (median): Mandel/scale convention bug"
-assert np.mean(degen) < 0.25, "QTI cumulant fit degenerate in >25% of brain — check fit/data quality"
+assert np.mean(degen) < 0.25, "QTI cumulant fit degenerate in >25% of brain - check fit/data quality"
 
 lam1 = np.zeros(mask.shape); lam2 = np.zeros(mask.shape); lam3 = np.zeros(mask.shape)
 lam1[mask] = l1; lam2[mask] = l2; lam3[mask] = l3

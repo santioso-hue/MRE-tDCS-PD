@@ -1,5 +1,5 @@
 #!/bin/bash
-# run_cohort.sh — scale-out over the cohort. Stages each subject from the mounted KTH share into the
+# run_cohort.sh - scale-out over the cohort. Stages each subject from the mounted KTH share into the
 # per-subject layout (symlinks; no copy), writes a per-subject config, and runs run_subject.sh
 # (default charm, ISO+MD-dMRI; DTI gated). Per-subject failures are logged and skipped, not fatal.
 #

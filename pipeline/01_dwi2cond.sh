@@ -1,25 +1,26 @@
 #!/bin/bash
 # 01_dwi2cond.sh -- DTI baseline conductivity tensor via standard SimNIBS dwi2cond.
 #
-# The DTI arm is the SEPARATE single-shell ParkMRE DTI scan (not the MUDI multi-shell). That scan is already
+# The DTI arm is the SEPARATE single-shell DTI scan (not the MUDI multi-shell). It is already
 # eddy/topup-corrected upstream, so we do NOT re-run dwi2cond's preprocessing; we fit the tensor with FSL
 # dtifit (--save_tensor) and hand the fitted tensor to dwi2cond for its validated T1 coregistration +
 # reorientation (the standard SimNIBS path, no reimplementation):
 #   dtifit --save_tensor   ->   dwi2cond --all --regmthd=12dof <subjectID> <DTI_tensor>
 #
-# Why this exact path (validated 2026-06-18 on PD_20230125_Control1 + Patient1):
-#  * dwi2cond --help: "A preprocessed DTI tensor (written out by FSL dtifit using --save_tensor) ... will be
-#    coregistered to the T1 image of the subject." So feeding the fitted tensor uses dwi2cond's own
-#    reorientation and skips the eddy/distortion steps our data does not need.
-#  * Registration option is --regmthd=12dof (affine). NOT the nonlinear default (fnirt over-warps the
-#    corrected data, registration bake-off 2026-06-16) and NOT `-r 12dof` (wrong flag for this dwi2cond build).
-#  * The registration DRIVER does not matter for DTI: a DTI bake-off (FA->T1 vs b0->T2) moved the DTI-vs-<D>
-#    orientation by <2 deg, and standard dwi2cond matched a hand-rolled S0/b0 affine to ~1 deg. So dwi2cond's
-#    own FA->T1 coregistration is used as-is (unlike the MD-dMRI arm, which needs the S0/b0 affine of 02).
-#  * The fitted tensor was cross-checked against the MRtrix DWI2Tensor (FA r=0.997, V1 within 1.6 deg in WM).
+# Why this path (validated 2026-06-18 on PD_20230125_Control1 + Patient1):
+#  * dwi2cond --help: a preprocessed dtifit --save_tensor tensor is accepted and only coregistered to T1,
+#    so the eddy/distortion steps our data does not need are skipped.
+#  * --regmthd=12dof (affine). NOT the nonlinear default (fnirt over-warps the corrected data) and NOT the
+#    old `-r 12dof` (wrong flag for this dwi2cond build).
+#  * Registration driver does not matter for DTI (bake-off FA->T1 vs b0->T2 moved orientation <2 deg; standard
+#    dwi2cond matched a hand-rolled affine ~1 deg), so dwi2cond's own FA->T1 coregistration is used as-is.
+#  * The fitted tensor was cross-checked vs MRtrix DWI2Tensor (FA r=0.997, V1 1.6 deg WM).
 #
-# Config inputs: DTI_DWI (eddy-corrected single-shell DWI), DTI_BVEC (eddy-rotated bvecs). bvals default to a
-# single b0 + N*b1500 if DTI_BVAL is unset; DTI_MASK optional. (Cohort staging of these is the cluster sub-project.)
+# Config inputs (see config.example.sh): DTI_DWI (eddy-corrected single-shell DTI DWI), DTI_BVEC (eddy-rotated
+# bvecs). Optional: DTI_BVAL (real bvals; used only when its token count matches the DWI, else single-shell
+# bvals are synthesized from the bvec with b = DTI_BVALUE, default 1500), DTI_MASK. Config aliases DTI_* to
+# DWI_* for the standard single-subject case; the cohort points them at the independent ParkMRE_DTI scan
+# (staged by run_cohort -- the cluster sub-project).
 #
 # Usage: PIPELINE_CONFIG=<subject config.sh> bash pipeline/01_dwi2cond.sh
 set -euo pipefail
@@ -34,16 +35,34 @@ export FSLOUTPUTTYPE=NIFTI_GZ
 M2M="$M2M_DIR"
 TENSOR_OUT="$M2M/DTI_coregT1_tensor.nii.gz"
 [ -d "$M2M" ] || { echo "ERROR: $M2M not found -- run 00_charm.sh first."; exit 1; }
-: "${DTI_DWI:?set DTI_DWI to the eddy-corrected single-shell DTI DWI}"
-: "${DTI_BVEC:?set DTI_BVEC to the (eddy-rotated) bvecs}"
+: "${DTI_DWI:?set DTI_DWI to the single-shell DTI DWI (see config.example.sh)}"
+: "${DTI_BVEC:?set DTI_BVEC to the (eddy-rotated) bvecs (see config.example.sh)}"
 for f in "$DTI_DWI" "$DTI_BVEC"; do [ -f "$f" ] || { echo "ERROR: missing $f"; exit 1; }; done
-if [ -f "$TENSOR_OUT" ]; then echo "DTI tensor exists, skipping (delete to force): $TENSOR_OUT"; exit 0; fi
+[ -f "$TENSOR_OUT" ] && { echo "DTI tensor exists, skipping (delete to force): $TENSOR_OUT"; exit 0; }
 
 FITDIR="$WORK_DIR/dti_arm"; mkdir -p "$FITDIR"
+NV="$(fslnvols "$DTI_DWI")"
 BVAL="${DTI_BVAL:-}"
-if [ -z "$BVAL" ]; then
-  NV="$(fslnvols "$DTI_DWI")"; BVAL="$FITDIR/dti.bval"
-  "$SIMNIBS_BIN/simnibs_python" -c "n=int('$NV'); open('$BVAL','w').write(' '.join(['0']+['1500']*(n-1))+'\n')"
+if [ -n "$BVAL" ] && [ -f "$BVAL" ] && [ "$(wc -w < "$BVAL")" -eq "$NV" ]; then
+  echo "Using provided bvals: $BVAL ($NV vols)"
+else
+  # No matching real bvals (the ParkMRE_DTI export omits/mismatches them). Synthesize a single-shell bval
+  # from the bvec: b0 at the zero-norm column(s), b=DTI_BVALUE elsewhere. Aborts unless >=1 b0 and the bvec
+  # column count matches the DWI -- no silent mis-scale (the b0 position is read, not assumed).
+  BVAL="$FITDIR/dti.bval"
+  "$SIMNIBS_BIN/simnibs_python" - "$DTI_BVEC" "$NV" "${DTI_BVALUE:-1500}" "$BVAL" <<'PY'
+import sys, numpy as np
+bvec, nv, b, out = sys.argv[1], int(sys.argv[2]), float(sys.argv[3]), sys.argv[4]
+v = np.loadtxt(bvec)
+if v.ndim != 2: raise SystemExit("bvec is not 2D")
+if v.shape[0] != 3: v = v.T
+if v.shape[1] != nv: raise SystemExit(f"bvec cols {v.shape[1]} != DWI vols {nv}")
+b0 = np.linalg.norm(v, axis=0) < 0.1
+if b0.sum() < 1: raise SystemExit("no b0 (zero-norm bvec column) found -- refusing to synthesize bvals")
+vals = np.where(b0, 0.0, b)
+open(out, "w").write(" ".join("%g" % x for x in vals) + "\n")
+print(f"synthesized single-shell bvals: {int(b0.sum())} b0 + {int((~b0).sum())} x b{b:g} ({nv} vols)")
+PY
 fi
 MASKOPT=""; [ -n "${DTI_MASK:-}" ] && MASKOPT="-m ${DTI_MASK}"
 

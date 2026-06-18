@@ -27,6 +27,13 @@ DWI_NII="${NII_DIR}/dti.nii.gz"           # single-shell DTI (for dwi2cond)
 DWI_BVAL="${NII_DIR}/dti.bval"
 DWI_BVEC="${NII_DIR}/dti.bvec"
 STE_B0_NII="${NII_DIR}/dmri_spherical.nii.gz"  # spherical-encoding series; vol 0 = b0 used for dMRI->T1
+# DTI baseline (01_dwi2cond.sh): the SEPARATE single-shell DTI scan. For a standard single-subject config
+# this is the same scan as DWI_* above; the cohort points these at the independent ParkMRE_DTI scan.
+DTI_DWI="${DWI_NII}"     # eddy/topup-corrected single-shell DTI DWI
+DTI_BVEC="${DWI_BVEC}"   # eddy-rotated bvecs
+DTI_BVAL="${DWI_BVAL}"   # real bvals; used when token count matches the DWI, else single-shell bvals synthesized from the bvec
+# DTI_BVALUE=1500        # b-value for synthesized bvals (default 1500)
+# DTI_MASK=""            # optional brain mask for dtifit
 # MD-dMRI (QTI) covariance fit, produced by pipeline/run_qti_cov_cohort.m (md-dmri toolbox; run in MATLAB first; see run_qti_cov_cohort.sh).
 QTI_MFS="${FIT_DIR}/qti_cov/cov_mfs.mat"  # model fit: oriented mean tensor <D> = m(:,:,:,2:7)
 QTI_DPS="${FIT_DIR}/qti_cov/cov_dps.mat"  # derived params: MD, uFA, principal eigenvector u
