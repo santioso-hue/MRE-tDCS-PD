@@ -1,28 +1,28 @@
 """
-synb0_circularity_check.py — does the Synb0 (T1-derived synthetic blip-down) correction inflate the
+synb0_circularity_check.py - does the Synb0 (T1-derived synthetic blip-down) correction inflate the
 dMRI->T1 registration, and does residual distortion reach the PD targets?
 
 The cohort dMRI was EPI-distortion-corrected with Synb0+topup, and Synb0 synthesised the missing
 blip-down b0 FROM THE T1. So the corrected b0/S0 (our registration driver) is partly T1-informed, which
 could make registering it back to T1 partly circular and inflate the registration score.
 
-Disentangling test (the raw corrected-vs-uncorrected gap alone is ambiguous — it conflates legitimate
+Disentangling test (the raw corrected-vs-uncorrected gap alone is ambiguous - it conflates legitimate
 distortion correction with circular T1-reshaping):
   - Register the UNCORRECTED b0 (MUDI2024fit/INPUTS/b0, pre-Synb0+topup) to T1 with the same affine, and
     compare its T1 edge alignment (gradient-magnitude correlation) to the CORRECTED S0's, REGIONALLY:
       * high-susceptibility (orbitofrontal + temporal): EPI distortion is large here. A gain here is
         LEGITIMATE distortion correction.
-      * deep/central (basal ganglia + midbrain — the PD targets): EPI distortion is small here. A gain
+      * deep/central (basal ganglia + midbrain - the PD targets): EPI distortion is small here. A gain
         here would indicate UNIFORM T1-reshaping, i.e. circularity.
   Improvement concentrated in high-susceptibility regions => the correction fixed real distortion, not
   circular T1-pull; the registration r is genuine. (The 12-DOF affine also cannot exploit local
-  T1-pre-alignment the way a nonlinear warp could — another reason the affine choice is robust here.)
+  T1-pre-alignment the way a nonlinear warp could - another reason the affine choice is robust here.)
 
 Independent backstop: the peduncle S-I orientation gate (qc_harness reg_peduncle_siz) validates the
 registration via the diffusion v1 DIRECTION, not b0<->T1 edge similarity, so it is immune to this
 circularity. It passed (0.854).
 
-Usage:  PIPELINE_CONFIG=<subject config.sh> simnibs_python analysis/synb0_circularity_check.py
+Usage:  PIPELINE_CONFIG=<subject config.sh> simnibs_python docs/registration_bakeoff/synb0_circularity_check.py
 """
 import os, sys, tempfile, subprocess
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "pipeline"))
@@ -34,9 +34,7 @@ from scipy import ndimage # noqa: E402
 REG, M2M, FSLDIR, SUBJ = cfg["REG_DIR"], cfg["M2M_DIR"], cfg["FSLDIR"], cfg["SUBJECT"]
 ROI = os.path.join(REG, "freesurfer_rois")
 T1_REF = os.path.join(M2M, "T1.nii.gz")
-INPUTS_B0 = os.environ.get(
-    "INPUTS_B0",
-    f"/Volumes/med-avbildning-1/sanoso/cohort_data/MUDI2024fit/{SUBJ}_lin/INPUTS/b0.nii.gz")
+INPUTS_B0 = os.environ.get("INPUTS_B0", "")   # set INPUTS_B0 to the uncorrected (pre-Synb0) b0; institutional path, not shipped
 
 
 def _arr(p):

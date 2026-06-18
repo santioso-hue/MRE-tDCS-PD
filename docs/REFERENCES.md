@@ -1,10 +1,10 @@
-# References — MRE_tDCS_PD Project
+# References - MRE_tDCS_PD Project
 
 Organized by role in the project. All citations are used in scripts, docs, or manuscript methods.
 
 ---
 
-## WM Conductivity Anisotropy — Empirical Basis
+## WM Conductivity Anisotropy - Empirical Basis
 
 **Nicholson PW (1965).** Specific impedance of cerebral white matter.
 *Experimental Neurology* 13:386–401.
@@ -24,7 +24,7 @@ Organized by role in the project. All citations are used in scripts, docs, or ma
 
 **Tuch DS, Wedeen VJ, Dale AM, George JS, Belliveau JW (2001).** Conductivity tensor mapping of the human brain using diffusion tensor MRI.
 *PNAS* 98(20):11697–11701.
-→ **Foundational theoretical paper.** Derived σ ∝ D from Maxwell-Garnett effective medium / tortuosity theory. Basis for dwi2cond and our MD-dMRI conductivity approach alike. Note: the 7–10:1 range is NOT from this paper — Tuch reports in vivo DTI ratios of 2–4:1. Cite Nicholson 1965 and Ranck 1965 for the 7–10:1 range.
+→ **Foundational theoretical paper.** Derived σ ∝ D from Maxwell-Garnett effective medium / tortuosity theory. Basis for dwi2cond and our MD-dMRI conductivity approach alike. Note: the 7–10:1 range is NOT from this paper - Tuch reports in vivo DTI ratios of 2–4:1. Cite Nicholson 1965 and Ranck 1965 for the 7–10:1 range.
 
 **Opitz A, Paulus W, Will S, Thielscher A (2015).** Deterministic and probabilistic analysis of the electric field during transcranial direct current stimulation.
 *NeuroImage* 109:266–279.
@@ -90,7 +90,7 @@ evaluated and not adopted under `'vn'`; plain ⟨D⟩ (no FWE) is the `--meanD` 
 
 **Saturnino GB, Siebner HR, Thielscher A, Madsen KH (2019).** Accessibility of cortical regions to focal TES: Dependence on spatial position, safety, and practical constraints.
 *NeuroImage* 203:116183.
-→ 5mm spherical ROI approach around MNI coordinates — used by SimNIBS group for CORTICAL targets. We follow this only for the cortical M1 reference; the subcortical ROIs are anatomical atlas masks (below), not spheres.
+→ 5mm spherical ROI approach around MNI coordinates - used by SimNIBS group for CORTICAL targets. We follow this only for the cortical M1 reference; the subcortical ROIs are anatomical atlas masks (below), not spheres.
 
 **Huang Y, Liu AA, Lafon B, Friedman D, Dayan M, Wang X, Bikson M, Doyle WK, Devinsky O, Parra LC (2017).** Measurements and models of electric fields in the in vivo human brain during transcranial electrical stimulation.
 *eLife* 6:e18834.
@@ -102,7 +102,7 @@ evaluated and not adopted under `'vn'`; plain ⟨D⟩ (no FWE) is the `--meanD` 
 
 ---
 
-## ROI Definitions — Subcortical Atlases
+## ROI Definitions - Subcortical Atlases
 
 **Pauli WM, Nili AN, Tyszka JM (2018).** A high-resolution probabilistic in vivo atlas of human subcortical brain nuclei (CIT168).
 *Scientific Data* 5:180063.
@@ -110,14 +110,14 @@ evaluated and not adopted under `'vn'`; plain ⟨D⟩ (no FWE) is the `--meanD` 
 
 **Ewert S, Plettig P, Li N, Bhatt M, Bhatt DL, Kühn AA, Volkmann J, Horn A (2018).** Toward defining deep brain stimulation targets in MNI space: A subcortical atlas based on multimodal MRI, histology and structural connectivity.
 *NeuroImage* 170:271–282.
-→ DISTAL atlas — a high-quality brainstem alternative for the dopaminergic nuclei; evaluated but not used in the final pipeline (CIT168 covers the same nuclei and was already used by the source dataset).
+→ DISTAL atlas - a high-quality brainstem alternative for the dopaminergic nuclei; evaluated but not used in the final pipeline (CIT168 covers the same nuclei and was already used by the source dataset).
 
 ---
 
 ## PD-Specific Diffusion and Mechanical Properties
 
 **Olsson C, Nilsson M, Stening EM, Lövdén M, Persson J (2025).** Effects of Parkinson's Disease on Mechanical and Microstructural Properties of the Brain.
-*[Journal TBD — from PMC12351346]*
+*[Journal TBD - from PMC12351346]*
 → **The dataset paper.** MRE + MD-dMRI in PD (n=12) vs HC (n=17), Philips Ingenia CX 3T. Key PD findings: SNc/VTA μFA↓, MD↑; NAC FA↓ (d=−1.15, largest effect); temporal/occipital WM softening (MRE). Defines our ROI set and primary scientific context.
 
 **Atkinson-Clement C, Pinto S, Eusebio A, Coulon O (2017).** Diffusion tensor imaging in Parkinson's disease: Review and meta-analysis.
@@ -129,7 +129,7 @@ evaluated and not adopted under `'vn'`; plain ⟨D⟩ (no FWE) is the `--meanD` 
 ## tDCS Effects and WM Anisotropy
 
 **Lee WH, Lisanby SH, Laine AF, Parra LC (2016).** Minimum electric field intensity in the brain at standard intensity for transcranial direct current stimulation.
-*Brain Stimulation* — [check exact citation]
+*Brain Stimulation* - [check exact citation]
 → WM anisotropy effects on tDCS E-field distribution.
 
 **Datta A, Bansal V, Diaz J, Patel J, Reato D, Bikson M (2009).** Gyri-precise head model of transcranial direct current stimulation: Improved spatial focality using a ring electrode versus conventional rectangular pad.

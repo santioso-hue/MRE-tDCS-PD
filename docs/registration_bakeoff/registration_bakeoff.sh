@@ -1,16 +1,16 @@
 #!/bin/bash
-# registration_bakeoff.sh — per-subject AFFINE vs FNIRT bake-off for dMRI(<D>) -> charm-T1.
+# registration_bakeoff.sh - per-subject AFFINE vs FNIRT bake-off for dMRI(<D>) -> charm-T1.
 #
 # Decides the registration CLASS for one subject by running both arms from the SAME flirt affine init,
 # so the ONLY difference is the fnirt nonlinear step (does it help, or over-warp already-distortion-
 # corrected data?). Both arms reorient v1 with vecreg (identical tool/frame), so the orientation score
 # compares like with like. (An ANTs-affine toolkit cross-check arm may be added later; not implemented
-# yet.) Scoring is done by analysis/score_registration_bakeoff.py.
+# yet.) Scoring is done by docs/registration_bakeoff/score_registration_bakeoff.py.
 #
 # Reads the dMRI-space maps prepared by prepare_dmri_tensor.py (REG_DIR): FA_dMRI, v1_dMRI, dMRI_mask.
 # Target = charm m2m T1 (so outputs live in the FEM mesh grid). Writes REG_DIR/bakeoff/{affine,fnirt}/.
 #
-# Usage:  PIPELINE_CONFIG=<subject config.sh> bash pipeline/registration_bakeoff.sh
+# Usage:  PIPELINE_CONFIG=<subject config.sh> bash docs/registration_bakeoff/registration_bakeoff.sh
 # Runtime: ~8 min (fnirt dominates).
 set -euo pipefail
 
@@ -93,4 +93,4 @@ echo ""
 echo "=== Bake-off arms written to $OUT/{affine,fnirt}/ ==="
 echo "  affine/FA_T1.nii.gz affine/v1_T1.nii.gz   (12-DOF affine)"
 echo "  fnirt/FA_T1.nii.gz  fnirt/v1_T1.nii.gz    (affine + nonlinear warp)"
-echo "Next: <simnibs_python> analysis/score_registration_bakeoff.py"
+echo "Next: <simnibs_python> docs/registration_bakeoff/score_registration_bakeoff.py"

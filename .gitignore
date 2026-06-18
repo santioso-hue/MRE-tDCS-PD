@@ -2,7 +2,7 @@
 tDCS-head-model/
 
 # Large subject data directories
-# These contain NIfTIs, meshes, and logs — too large for git, use DVC or paths doc
+# These contain NIfTIs, meshes, and logs - too large for git, use DVC or paths doc
 FullPD5_segmentation/
 sub04_segmentation/
 charm_ernie/
@@ -32,6 +32,18 @@ analysis/sim_compare/
 
 # Analysis result tables (regenerable: re-run the analysis scripts)
 analysis/results/
+
+# Patient data + result/figure artifacts (NEVER public; sensitive or regenerable)
+data/
+results/
+figures/
+
+# Local-only working docs (recreated per machine; never travel with a public clone)
+CLAUDE.md
+state.md
+PROJECT_LAYOUT.md
+docs/specs/
+docs/plans/
 
 # FSL outputs
 *.log
@@ -67,6 +79,6 @@ venv/
 # Local machine config (paths, subject ID)
 config/config.sh
 
-# Pilot (FullPD5) — superseded by the cohort; kept locally for reference, not tracked
+# Pilot (FullPD5) - superseded by the cohort; kept locally for reference, not tracked
 pipeline/run_qti_cov.m
 references/

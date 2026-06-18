@@ -1,5 +1,5 @@
 """
-03_build_conductivity_tensor.py — build THE MD-dMRI conductivity tensor (σ ∝ ⟨D⟩).
+03_build_conductivity_tensor.py - build THE MD-dMRI conductivity tensor (σ ∝ ⟨D⟩).
 
 Usage: simnibs_python pipeline/03_build_conductivity_tensor.py  ->  tensor_MD_dMRI.nii.gz
 
@@ -114,13 +114,13 @@ print(f"\nAnisotropy λ1/λ3 (covered brain): median={np.median(ratio):.3f}, p95
 print(f"  > 8 (VN cap): {100*np.mean(ratio>8):.2f}%")
 # Cross-check the two INDEPENDENT reorientation paths: the v1_T1 anchor (vecreg of v1_dMRI) vs the
 # principal axis of the vecreg-reoriented tensor (evec[:,:,2]). Reoriented separately, so agreement is
-# a real test that reorientation held (comparing v1 to v1_T1 would be a tautology — v1 IS the anchor).
+# a real test that reorientation held (comparing v1 to v1_T1 would be a tautology - v1 IS the anchor).
 # Restrict to voxels where the anchor was used, not the degenerate fallback (which set v1 = evec[:,:,2]).
 tensor_axis = evec[valid_ref, :, 2]
 ang = np.degrees(np.arccos(np.clip(np.abs(np.sum(v1[valid_ref] * tensor_axis, axis=1)), 0, 1)))
 print(f"v1_T1 anchor vs independent tensor-frame axis: median={np.median(ang):.2f}°, within15°={np.mean(ang<15)*100:.1f}%")
 assert np.isfinite(out[idx[:, 0], idx[:, 1], idx[:, 2]]).all(), "non-finite values in the conductivity tensor"
-assert np.mean(ang < 15) > 0.9, "v1_T1 anchor disagrees with the tensor-frame principal axis in >10% of WM — reorientation broke"
+assert np.mean(ang < 15) > 0.9, "v1_T1 anchor disagrees with the tensor-frame principal axis in >10% of WM - reorientation broke"
 
 out_path = os.path.join(WDIR, out_name)
 hdr = timg.header.copy(); hdr.set_data_shape(out.shape); hdr.set_data_dtype(np.float32)

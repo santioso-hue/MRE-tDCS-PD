@@ -1,5 +1,5 @@
 """
-score_registration_bakeoff.py — score the AFFINE vs FNIRT registration arms on one subject.
+score_registration_bakeoff.py - score the AFFINE vs FNIRT registration arms on one subject.
 
 Rewritten after an adversarial code review. Three metrics, both arms, ONE shared evaluation mask
 (REG_DIR/bakeoff/{affine,fnirt}/):
@@ -28,7 +28,7 @@ orig->charm brain RECALL is printed (same-extent check) so the reference alignme
 Verdict is computed only over arms that PASS orientation; fnirt is preferred over affine only if it
 improves alignment AND its nonlinear displacement is small.
 
-Usage:  PIPELINE_CONFIG=<subject config.sh> simnibs_python analysis/score_registration_bakeoff.py
+Usage:  PIPELINE_CONFIG=<subject config.sh> simnibs_python docs/registration_bakeoff/score_registration_bakeoff.py
 """
 import os, sys, json, tempfile, subprocess
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "pipeline"))

@@ -1,5 +1,5 @@
 #!/bin/bash
-# 02_register_dmri_to_T1.sh — carry the QTI mean-tensor maps from dMRI space to T1 (charm/mesh) space.
+# 02_register_dmri_to_T1.sh - carry the QTI mean-tensor maps from dMRI space to T1 (charm/mesh) space.
 #
 # Registration is an S0-driven 12-DOF affine (dMRI S0 -> charm T2, same T2-like contrast), applied to
 # every map. Affine, not nonlinear: the dMRI is already Synb0+topup distortion-corrected, and the
@@ -28,10 +28,10 @@ require_nonzero() {
     local f="$1"
     [ -f "$f" ] || { echo "ERROR: expected output missing: $f"; exit 1; }
     local nz; nz="$(fslstats "$f" -V | awk '{print $1}')"
-    [ "${nz:-0}" -gt 0 ] 2>/dev/null || { echo "ERROR: $f has 0 non-zero voxels — registration failed"; exit 1; }
+    [ "${nz:-0}" -gt 0 ] 2>/dev/null || { echo "ERROR: $f has 0 non-zero voxels - registration failed"; exit 1; }
     # fslstats -V counts NaN/Inf as nonzero, so also reject a non-finite max (an all-garbage map "passes" otherwise).
     local mx; mx="$(fslstats "$f" -R | awk '{print $2}')"
-    case "$mx" in *[iI]nf*|*[nN]a[nN]*) echo "ERROR: $f has non-finite values (max=$mx) — registration failed"; exit 1;; esac
+    case "$mx" in *[iI]nf*|*[nN]a[nN]*) echo "ERROR: $f has non-finite values (max=$mx) - registration failed"; exit 1;; esac
 }
 
 T1_REF="$M2M_DIR/T1.nii.gz"
@@ -99,4 +99,4 @@ echo "  lam1/lam2/lam3_T1.nii.gz   mean-tensor eigenvalues (um2/ms, scalar)"
 echo "  tensor_triaxial_T1.nii.gz  reoriented <D> frame (in-plane v2,v3 source)"
 echo "  v1_T1.nii.gz               principal eigenvector (vecreg)"
 echo "  MD_T1, uFA_T1.nii.gz       QA / post-hoc MRE-comparison maps"
-echo "  s0_T1, FA_T1.nii.gz        registration QC — VISUALLY CHECK over T1 before trusting"
+echo "  s0_T1, FA_T1.nii.gz        registration QC - VISUALLY CHECK over T1 before trusting"

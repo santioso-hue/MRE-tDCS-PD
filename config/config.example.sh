@@ -2,12 +2,12 @@
 #
 #   cp config/config.example.sh config/config.sh   then edit for your machine.
 #
-# config/config.sh is gitignored — keep machine paths and subject IDs out of
+# config/config.sh is gitignored - keep machine paths and subject IDs out of
 # version control. Both the bash scripts (source this file) and the Python
 # scripts (via pipeline/_config.py) read these values, so this is the single
 # source of truth for paths and the subject ID.
 
-# Subject ID — used by CHARM, dwi2cond and SimNIBS for output naming.
+# Subject ID - used by CHARM, dwi2cond and SimNIBS for output naming.
 SUBJECT="sub-01"
 
 # Raw scanner data root: contains NiiFiles/ (NIfTI) and fit/ (QTI/MD-dMRI fit).
@@ -22,7 +22,7 @@ FIT_DIR="${DATA_DIR}/fit"
 M2M_DIR="${WORK_DIR}/m2m_${SUBJECT}"
 REG_DIR="${WORK_DIR}/registration"
 
-# Subject-specific inputs — edit the file names to match your acquisition.
+# Subject-specific inputs - edit the file names to match your acquisition.
 DWI_NII="${NII_DIR}/dti.nii.gz"           # single-shell DTI (for dwi2cond)
 DWI_BVAL="${NII_DIR}/dti.bval"
 DWI_BVEC="${NII_DIR}/dti.bvec"
@@ -42,7 +42,7 @@ QTI_DPS="${FIT_DIR}/qti_cov/cov_dps.mat"  # derived params: MD, uFA, principal e
 SIMNIBS_BIN="${HOME}/Applications/SimNIBS-4.6/bin"
 FSLDIR="${HOME}/fsl"
 
-# MRE (magnetic resonance elastography) maps — for the post-hoc cross-modal comparison.
+# MRE (magnetic resonance elastography) maps - for the post-hoc cross-modal comparison.
 MRE_STIFFNESS="${NII_DIR}/stiffness.nii.gz"     # |G*| magnitude (kPa-scale)
 MRE_ALPHA="${NII_DIR}/alpha.nii.gz"             # springpot exponent (elastic<->viscous); cohort uses this
 MRE_STORAGE="${NII_DIR}/storage_modulus.nii.gz" # G' (real shear modulus); leave "" if not available

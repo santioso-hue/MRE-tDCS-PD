@@ -1,5 +1,5 @@
 #!/bin/bash
-# 05_register_mre_to_T1.sh — resample the MRE maps (stiffness + alpha) into charm/mesh T1 space so MRE,
+# 05_register_mre_to_T1.sh - resample the MRE maps (stiffness + alpha) into charm/mesh T1 space so MRE,
 # ROIs, and E-field share one space for the cross-modal comparison.
 #
 # MRE is delivered already in the FreeSurfer-conformed T1 (256^3, "_ToT1" = recon-all orig.mgz grid), so

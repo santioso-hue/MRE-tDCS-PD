@@ -1,4 +1,4 @@
-# analysis/ — from |E| to a reported number
+# analysis/ - from |E| to a reported number
 
 Reading guide for a reviewer: *can I trust that a number in a results table came from this code?*
 This folder turns the SimNIBS sims into the per-ROI numbers and figures. The per-subject pipeline that
@@ -36,17 +36,17 @@ pipeline/01_dwi2cond (gated)           ->  m2m/DTI_coregT1_tensor.nii.gz    (DTI
 ```
 
 ## Supporting scripts
-- `qc_harness.py` — per-subject QC across mesh / conductivity / registration / E-field. The p95-range and
+- `qc_harness.py` - per-subject QC across mesh / conductivity / registration / E-field. The p95-range and
   spike checks are SANITY GATES (flag an artifactual sim), not reported numbers. `--emit-metrics` dumps the
   metric snapshot. This is the single validation authority.
-- `qc_figures.py` — figures only: |E| overlay PNGs, the MD-dMRI-minus-DTI difference PNG, and T1-space
+- `qc_figures.py` - figures only: |E| overlay PNGs, the MD-dMRI-minus-DTI difference PNG, and T1-space
   magnE NIfTIs. No stats of record.
-- `07_build_tier3_nuclei.sh` + `_build_tier3_labels.py` — CIT168 SNc/SNr/VTA/RN/STN masks. EXPLORATORY,
+- `07_build_tier3_nuclei.sh` + `_build_tier3_labels.py` - CIT168 SNc/SNr/VTA/RN/STN masks. EXPLORATORY,
   E-field-only, overlap-allowed; not headline numbers. Every tier-3 magic number is in `07`'s config block.
   The CIT168 atlas cache it consumes (`_atlas_cache/`: the 2009c->NLin6 affine + `pauli_prob`) is a
   cluster/manual artifact staged into `registration/atlas_rois/`, not produced by any in-repo script.
-- `build_rois.py` — recon-all parcellation -> Tier-1/2 ROI masks in mesh space (`registration/freesurfer_rois/`).
-- `_rois.py`, `_sims.py` — shared helpers (ROI loading/sampling; montage-aware mesh lookup). One copy, imported.
+- `build_rois.py` - recon-all parcellation -> Tier-1/2 ROI masks in mesh space (`registration/freesurfer_rois/`).
+- `_rois.py`, `_sims.py` - shared helpers (ROI loading/sampling; montage-aware mesh lookup). One copy, imported.
 
 ## Unit-tested (the credibility signal)
 Label assembly (`tests/test_lobe_grouping.py`), the cohort stats engine (`tests/test_cohort_stats.py`), the

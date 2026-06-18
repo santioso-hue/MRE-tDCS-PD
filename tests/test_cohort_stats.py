@@ -1,5 +1,5 @@
 """
-test_cohort_stats.py — validate analysis/06_cohort_stats.py against a synthetic cohort with known effects.
+test_cohort_stats.py - validate analysis/06_cohort_stats.py against a synthetic cohort with known effects.
 
 Builds a fake 29-subject cohort (12 PD, 17 HC) with planted signals and asserts the engine recovers
 them: consistent MD-dMRI>DTI is H1-significant, a noisy ROI is not; a planted age-adjusted PD>HC

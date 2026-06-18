@@ -1,0 +1,11 @@
+# Python dependencies for the analysis/ and pipeline Python scripts.
+#
+# The primary runtime is SimNIBS 4.6's bundled interpreter (simnibs_python), which already provides
+# numpy / scipy / nibabel; these pins (captured 2026-06, Python 3.11) document a standalone analysis env.
+#
+# NOT pip-installable - install separately and put on PATH (see README "Setup"):
+#   SimNIBS 4.6, FSL >= 6.0, FreeSurfer (recon-all), MATLAB + the md-dmri toolbox, elastix.
+numpy==2.3.0
+scipy==1.17.1
+nibabel==5.3.3
+matplotlib==3.10.8

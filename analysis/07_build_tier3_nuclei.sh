@@ -1,5 +1,5 @@
 #!/bin/bash
-# 07_build_tier3_nuclei.sh — Tier-3 small PD nuclei ROIs (SNc, SNr, VTA, RN, STN L/R) from
+# 07_build_tier3_nuclei.sh - Tier-3 small PD nuclei ROIs (SNc, SNr, VTA, RN, STN L/R) from
 # CIT168/Pauli, warped to subject space. Reuses the CIT168 atlas cache (2009c->NLin6 affine + pauli_prob)
 # staged under registration/atlas_rois/_atlas_cache/, a cluster/manual artifact not built by an in-repo script.
 #

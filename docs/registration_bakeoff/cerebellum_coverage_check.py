@@ -1,5 +1,5 @@
 """
-cerebellum_coverage_check.py — is the MD-dMRI cerebellum coverage gap caused by the Synb0 correction,
+cerebellum_coverage_check.py - is the MD-dMRI cerebellum coverage gap caused by the Synb0 correction,
 or is it inherent to the dMRI acquisition (and therefore present in the uncorrected data too)?
 
 MD-dMRI conductivity is anisotropic only where the QTI tensor reached (lam1 > EPS); elsewhere it falls
@@ -8,7 +8,7 @@ Synb0+topup is a within-FOV distortion correction (it cannot add un-acquired tis
 does the UNCORRECTED b0 (pre-Synb0) have cerebellum signal that the corrected fit lacks (=> Synb0
 artifact), or do BOTH b0s lack it (=> dMRI FOV/SNR limit, present regardless of correction)?
 
-Usage:  PIPELINE_CONFIG=<subject config.sh> simnibs_python analysis/cerebellum_coverage_check.py
+Usage:  PIPELINE_CONFIG=<subject config.sh> simnibs_python docs/registration_bakeoff/cerebellum_coverage_check.py
 """
 import os, sys, tempfile, subprocess
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "pipeline"))
@@ -20,8 +20,7 @@ REG, M2M, DATA, FSLDIR, SUBJ = cfg["REG_DIR"], cfg["M2M_DIR"], cfg["DATA_DIR"], 
 FIT = os.path.join(os.path.dirname(cfg["QTI_MFS"]))   # .../fit/qti_cov
 T1_REF = os.path.join(M2M, "T1.nii.gz")
 B0_CORR = os.path.join(FIT, "b0_ref_dMRI.nii.gz")     # corrected (post Synb0+topup) fit b0
-B0_UNCORR = os.environ.get("INPUTS_B0",
-    f"/Volumes/med-avbildning-1/sanoso/cohort_data/MUDI2024fit/{SUBJ}_lin/INPUTS/b0.nii.gz")
+B0_UNCORR = os.environ.get("INPUTS_B0", "")   # set INPUTS_B0 to the uncorrected (pre-Synb0) b0; institutional path, not shipped
 flirt = os.path.join(FSLDIR, "bin", "flirt")
 cxfm = os.path.join(FSLDIR, "bin", "convert_xfm")
 env = dict(os.environ, FSLDIR=FSLDIR, FSLOUTPUTTYPE="NIFTI_GZ")

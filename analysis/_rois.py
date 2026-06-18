@@ -1,4 +1,4 @@
-"""_rois.py — Shared ROI loading + sampling for the analysis scripts.
+"""_rois.py - Shared ROI loading + sampling for the analysis scripts.
 
 ROIs are int-label masks on the charm/mesh grid, built from the recon-all parcellation by
 analysis/build_rois.py:
@@ -21,15 +21,26 @@ PD_EPS = 1e-3    # positive-definite floor on the smallest eigenvalue (um2/ms). 
 FILL_EPS = 1e-6  # |Dxx| reject for empty/background voxels (distinct from the PD floor above)
 
 
-def eigh_6comp(t6, sel):
-    """Eigendecomposition of a 6-component symmetric-tensor volume (FSL order xx,xy,xz,yy,yz,zz) over
-    the selected voxels `sel` (bool over the spatial dims). Returns (evals ascending (N,3), evecs (N,3,3));
-    evecs[:, :, 2] is the principal eigenvector V1. The single shared copy for the analysis layer."""
+def _pack_6comp(t6, sel):
+    """Assemble (N,3,3) symmetric matrices from a 6-component volume (FSL order xx,xy,xz,yy,yz,zz) over the
+    selected voxels `sel`. Indexing t6[sel] first avoids a full-volume (X,Y,Z,3,3) allocation. One source of
+    truth for the FSL pack, shared by eigh_6comp and eigvals_6comp."""
     comp = t6[sel]
     m = np.zeros((comp.shape[0], 3, 3))
     for a, (p, q) in enumerate(TENSOR_ORDER):
         m[:, p, q] = comp[:, a]; m[:, q, p] = comp[:, a]
-    return np.linalg.eigh(m)
+    return m
+
+
+def eigh_6comp(t6, sel):
+    """Eigendecomposition of a 6-component symmetric-tensor volume over `sel`. Returns (evals ascending
+    (N,3), evecs (N,3,3)); evecs[:, :, 2] is the principal eigenvector V1."""
+    return np.linalg.eigh(_pack_6comp(t6, sel))
+
+
+def eigvals_6comp(t6, sel):
+    """Ascending eigenvalues (N,3) only, via eigvalsh (no eigenvectors) -- the values-only fast path."""
+    return np.linalg.eigvalsh(_pack_6comp(t6, sel))
 
 
 def fa_from_evals(ev):
@@ -83,7 +94,7 @@ def _labels_on_grid(target_img, labeled, lab_affine):
 
 def sample_volume_medians(map_path, labeled, lab_affine, names, gate=None):
     """Median of a scalar map within each ROI label. Ignores 0 / non-finite voxels.
-    Optional `gate` (bool array on the map grid) further restricts which voxels count —
+    Optional `gate` (bool array on the map grid) further restricts which voxels count -
     used to drop low-confidence / CSF-adjacent MRE voxels (05_mre_efield_comparison)."""
     img = nib.load(map_path)
     d = np.asarray(img.dataobj, dtype=float)

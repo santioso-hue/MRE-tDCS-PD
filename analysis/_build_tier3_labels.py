@@ -1,4 +1,4 @@
-"""_build_tier3_labels.py — warped Tier-3 nucleus prob maps -> per-nucleus L/R binary masks
+"""_build_tier3_labels.py - warped Tier-3 nucleus prob maps -> per-nucleus L/R binary masks
 (overlap ALLOWED: these nuclei are unresolvable at this resolution) plus a winner-take-all
 labeled volume; reports volumes and pairwise overlap.
 """
@@ -29,7 +29,7 @@ probs = {}                      # name -> (prob masked to side) for the WTA labe
 for nm in NUCLEI:
     p = os.path.join(T3, f"sub_{nm}.nii.gz")
     if not os.path.exists(p):
-        print(f"  WARN: {p} missing — skipping {nm}")
+        print(f"  WARN: {p} missing - skipping {nm}")
         continue
     d = nib.load(p).get_fdata()
     above = d >= THR
@@ -41,7 +41,7 @@ for nm in NUCLEI:
         nib.save(nib.Nifti1Image(m.astype(np.uint8), aff, t1.header),
                  os.path.join(T3, f"roi_{name}.nii.gz"))
 
-# winner-take-all labeled volume (visualisation only — non-overlapping)
+# winner-take-all labeled volume (visualisation only - non-overlapping)
 order = list(masks.keys())
 stack = np.stack([probs[n] for n in order], -1)
 amax = stack.max(-1); arg = stack.argmax(-1)
@@ -59,7 +59,7 @@ for n in order:
     v = int(masks[n].sum())
     print(f"  {n:7s}: {v:4d} vox ({v*vx:.0f} mm3)")
 
-print("\nPairwise overlap (Dice) — expected HIGH; documents the resolution caveat:")
+print("\nPairwise overlap (Dice) - expected HIGH; documents the resolution caveat:")
 shown = False
 for a in range(len(order)):
     for b in range(a + 1, len(order)):

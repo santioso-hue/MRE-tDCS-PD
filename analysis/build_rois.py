@@ -1,5 +1,5 @@
 """
-build_rois.py — recon-all (FreeSurfer) ROI masks in charm/mesh space for the tDCS E-field analysis.
+build_rois.py - recon-all (FreeSurfer) ROI masks in charm/mesh space for the tDCS E-field analysis.
 
 Usage:  <simnibs_python> analysis/build_rois.py --fs_dir <recon-all subject dir (contains mri/)>
 
@@ -19,7 +19,7 @@ WM lobes are from the REAL wmparc (3000+idx lh / 4000+idx rh), not nearest-corti
 brainstem is split into MESENCEPHALON (173) / PONS (174) via the Iglesias 2015 module
 (brainstemSsLabels, needs `segmentBS.sh` / recon-all `-brainstem-structures`), not the single aseg
 Brain-Stem (16) which does not match Olsson. The recon-all aparc+aseg also resolves the SimNIBS
-atlas2subject right-hemisphere bug (see state.md). Fine midbrain nuclei (SNc/SNr/VTA/RN/STN) are NOT
+atlas2subject right-hemisphere bug. Fine midbrain nuclei (SNc/SNr/VTA/RN/STN) are NOT
 built here; tier-3 nuclei live in registration/atlas_rois/tier3/ (built by 07), never routed through
 this int-label volume.
 

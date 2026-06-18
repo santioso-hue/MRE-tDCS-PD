@@ -1,5 +1,5 @@
 """
-06_cohort_stats.py — Cohort statistics for the tDCS conductivity-model study (the main group deliverable).
+06_cohort_stats.py - Cohort statistics for the tDCS conductivity-model study (the main group deliverable).
 
 Concatenates per-subject ROI E-field CSVs and computes, per ROI per montage:
 

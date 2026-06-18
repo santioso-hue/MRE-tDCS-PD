@@ -34,7 +34,9 @@ parcellation (matching Olsson et al. 2025) and brought into the mesh space; the 
 
 1. Install [FSL](https://fsl.fmrib.ox.ac.uk/) (≥ 6.0) and [SimNIBS](https://simnibs.github.io/simnibs/)
    (4.6). ROIs are built from a [FreeSurfer](https://surfer.nmr.mgh.harvard.edu/) `recon-all`
-   parcellation (`recon-all` + `-brainstem-structures`, run on the cluster).
+   parcellation (`recon-all` + `-brainstem-structures`, run on the cluster). The Python scripts run under
+   SimNIBS's `simnibs_python` (bundles numpy/scipy/nibabel); for a standalone analysis env see
+   `requirements.txt` (`pip install -r requirements.txt`; matplotlib is also used for figures).
 2. Copy the config template and edit it for your machine and subject:
 
    ```bash
@@ -74,12 +76,15 @@ bash           pipeline/05_register_mre_to_T1.sh # MRE maps -> T1 (post-hoc)
 ```
 config/    config.example.sh (template), cohort.example.json (cohort manifest)
 pipeline/  00_charm, 01_dwi2cond, run_qti_cov_cohort.m + .sh (QTI covariance fit, MATLAB), 02_register_dmri_to_T1,
-           03_build_conductivity_tensor, 04_run_simulations, 05_register_mre_to_T1,
-           prepare_dmri_tensor.py (called by 02), _config.py, conductivity_models_derivation.md (methods)
-analysis/  build_rois (recon-all ROIs), _rois (ROI resolver), extract_roi_efield,
-           mre_efield_comparison, qc_harness (stats/QC), qc_figures (PNGs)
-docs/      references
-tests/     mean-tensor reconstruction + QC-harness checks
+           03_build_conductivity_tensor, 04_run_simulations, 05_register_mre_to_T1, prepare_dmri_tensor.py
+           (called by 02), _config.py, conductivity_models_derivation.md (methods),
+           run_subject.sh / run_cohort.sh (per-subject + cohort drivers)
+analysis/  build_rois (recon-all ROIs), _rois / _sims (shared helpers), 04_extract_roi_efield,
+           05_mre_efield_comparison, 06_cohort_stats (group stats H1/H3), 08_tensor_divergence (DTI vs <D>),
+           07_build_tier3_nuclei + _build_tier3_labels (CIT168 nuclei), qc_harness (validation / QC gates),
+           qc_figures (PNGs), README.md (analysis DAG)
+docs/      REFERENCES, cluster_runbook, registration_bakeoff/ (registration-method decision record)
+tests/     unit tests (lobe grouping, cohort stats, qc_harness, tensor divergence) + validate_mean_tensor (per-subject)
 ```
 
 ## Notes

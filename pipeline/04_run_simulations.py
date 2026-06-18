@@ -1,17 +1,17 @@
 """
-04_run_simulations.py — tDCS simulations over (montage x conductivity-model) for one subject.
+04_run_simulations.py - tDCS simulations over (montage x conductivity-model) for one subject.
 
 Conductivity models (montage-independent; only the input tensor differs):
-  ISO      — isotropic scalar conductivity (literature values)
-  DTI      — anisotropic 'vn' from dwi2cond (FA-based classical baseline)
-  MD-dMRI  — anisotropic 'vn', sigma proportional to <D> (QTI mean tensor) -> tensor_MD_dMRI.nii.gz
+  ISO      - isotropic scalar conductivity (literature values)
+  DTI      - anisotropic 'vn' from dwi2cond (FA-based classical baseline)
+  MD-dMRI  - anisotropic 'vn', sigma proportional to <D> (QTI mean tensor) -> tensor_MD_dMRI.nii.gz
 
 Montages. Each target gets a conventional pad and a focal 4x1 HD version, same +2 mA total dose
 (HD vs pad = same dose, different focality):
-  M1        — C3 anode / Fp2 cathode, 5x5 cm pads, 2 mA  (primary montage)
-  DLPFC     — F3 anode / Fp2 cathode, 5x5 cm pads, 2 mA
-  HD_M1     — 4x1 ring: centre C3 (+2 mA), returns Cz/F3/T7/P3 (-0.5 mA each), ~1 cm discs
-  HD_DLPFC  — 4x1 ring: centre F3 (+2 mA), returns Fp1/Fz/C3/F7 (-0.5 mA each), ~1 cm discs
+  M1        - C3 anode / Fp2 cathode, 5x5 cm pads, 2 mA  (primary montage)
+  DLPFC     - F3 anode / Fp2 cathode, 5x5 cm pads, 2 mA
+  HD_M1     - 4x1 ring: centre C3 (+2 mA), returns Cz/F3/T7/P3 (-0.5 mA each), ~1 cm discs
+  HD_DLPFC  - 4x1 ring: centre F3 (+2 mA), returns Fp1/Fz/C3/F7 (-0.5 mA each), ~1 cm discs
 Left M1 (C3) is fixed across all subjects to avoid montage-laterality confounding the conductivity-model
 contrast (C4 mirror optional). 4x1 ring: Datta et al. 2009 Brain Stimul 2:201; Villamar et al. 2013
 (JoVE; J Pain 14:371).
@@ -23,7 +23,7 @@ Usage (run in WORK_DIR):
   simnibs_python pipeline/04_run_simulations.py                              # all montages x all models
   simnibs_python pipeline/04_run_simulations.py --montage DLPFC              # one montage, all models
   simnibs_python pipeline/04_run_simulations.py --montage M1 --model MD-dMRI # one montage, one model
-NOTE: do NOT pass fn_tensor_nifti with tms_flex_opt/tes_flex_opt — documented SimNIBS bug.
+NOTE: do NOT pass fn_tensor_nifti with tms_flex_opt/tes_flex_opt - documented SimNIBS bug.
 """
 import os, sys, argparse
 
@@ -69,7 +69,7 @@ def validate_tensor(path):
     t, t1 = nib.load(path), nib.load(os.path.join(SUBPATH, "T1.nii.gz"))
     assert t.shape[:3] == t1.shape[:3], f"Tensor shape {t.shape[:3]} != T1 {t1.shape[:3]} (wrong space)"
     assert t.shape[3] == 6, f"Tensor 4th dim {t.shape[3]} != 6 (FSL order)"
-    assert np.allclose(t.affine, t1.affine, atol=1e-3), "Tensor affine != T1 — wrong space!"
+    assert np.allclose(t.affine, t1.affine, atol=1e-3), "Tensor affine != T1 - wrong space!"
 
 
 def run(montage_name, model_name):
@@ -81,7 +81,7 @@ def run(montage_name, model_name):
     s.open_in_gmsh = False                             # headless/batch: never auto-open GMSH (it hangs without a display)
     if tensor is not None:
         if not os.path.exists(tensor):
-            return FileNotFoundError(f"{tensor} not found — run 03_build_conductivity_tensor.py")
+            return FileNotFoundError(f"{tensor} not found - run 03_build_conductivity_tensor.py")
         validate_tensor(tensor)
         s.fname_tensor = tensor                        # on the SESSION, not the TDCSLIST (overwrite trap)
     tdcs = s.add_tdcslist()
@@ -106,7 +106,7 @@ def main():
     args = ap.parse_args()
 
     if not os.path.isdir(os.path.join(WDIR, SUBPATH)):
-        raise FileNotFoundError(f"Head model not found: {SUBPATH} — run CHARM first.")
+        raise FileNotFoundError(f"Head model not found: {SUBPATH} - run CHARM first.")
     os.chdir(WDIR)
 
     montages = args.montage or list(MONTAGES)

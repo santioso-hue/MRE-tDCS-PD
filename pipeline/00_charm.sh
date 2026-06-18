@@ -1,5 +1,5 @@
 #!/bin/bash
-# 00_charm.sh — build the 5-tissue head model from T1+T2 with SimNIBS charm (standard defaults).
+# 00_charm.sh - build the 5-tissue head model from T1+T2 with SimNIBS charm (standard defaults).
 # Produces a tetrahedral FEM mesh in m2m_<SUBJECT_ID>/.
 #
 # Usage:   bash pipeline/00_charm.sh <SUBJECT_ID> <T1.nii> <T2.nii> <output_dir> [settings.ini]
@@ -41,6 +41,6 @@ else
     charm "$SUBJECT_ID" "$T1" "$T2" --forceqform 2>&1 | tee "charm_${SUBJECT_ID}.log"
 fi
 
-[ -d "m2m_${SUBJECT_ID}" ] || { echo "ERROR: charm did not produce m2m_${SUBJECT_ID}/ — see charm_${SUBJECT_ID}.log"; exit 1; }
+[ -d "m2m_${SUBJECT_ID}" ] || { echo "ERROR: charm did not produce m2m_${SUBJECT_ID}/ - see charm_${SUBJECT_ID}.log"; exit 1; }
 
 echo "Done. Head model: $OUT_DIR/m2m_${SUBJECT_ID}/"

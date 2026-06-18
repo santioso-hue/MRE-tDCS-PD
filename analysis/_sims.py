@@ -1,4 +1,4 @@
-"""_sims.py — shared lookup for the per-(montage x model) SimNIBS output meshes.
+"""_sims.py - shared lookup for the per-(montage x model) SimNIBS output meshes.
 
 Single source of the model -> (dir token, mesh-field suffix) map and the montage-aware path, so 04_extract,
 05 and qc_harness all resolve 04_run_simulations.py's sim_<montage>_<token>/ meshes identically (with a

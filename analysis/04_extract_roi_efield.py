@@ -1,5 +1,5 @@
 """
-04_extract_roi_efield.py — E-field per ROI per conductivity model, namespaced by subject and montage.
+04_extract_roi_efield.py - E-field per ROI per conductivity model, namespaced by subject and montage.
 
 Usage: ~/Applications/SimNIBS-4.6/bin/simnibs_python analysis/04_extract_roi_efield.py [--montage M1|DLPFC|...]
 Output (gitignored): analysis/results/<subject>/roi_efield_<montage>.csv
@@ -8,7 +8,7 @@ ROIs from _rois.py (build_rois.py -> registration/<roi_dir>/): cortical/WM lobes
 subcortical; sampled over every element whose barycentre falls inside. "WholeBrain" is all GM+WM.
 
 CHARM assigns the deep nuclei predominantly to WM (tag=1), not cortical GM (tag=2), so we sample both
-WM and GM — the volumetric tissues where anisotropic conductivity matters.
+WM and GM - the volumetric tissues where anisotropic conductivity matters.
 
 Writes BOTH p95 (dosimetry headline, Huang 2017) and median (Olsson ROI convention) per model;
 06_cohort_stats.py picks the column it needs.
@@ -96,7 +96,7 @@ def main():
     for model in MODELS:
         p = sim_mesh(WDIR, args.montage, model, args.subject)
         if p is None:
-            print(f"  [{model}/{args.montage}] mesh not found — SKIPPING")
+            print(f"  [{model}/{args.montage}] mesh not found - SKIPPING")
             results[model] = None
             continue
         print(f"Loading {model}/{args.montage}: {os.path.relpath(p, WDIR)}")
@@ -121,7 +121,7 @@ def main():
         sys.exit(f"No sim meshes found for montage '{args.montage}' / subject '{args.subject}'.")
 
     # Console table (p95, with the MD-dMRI deltas for human QC)
-    print(f"\nE-field p95 (V/m) — montage {args.montage}, subject {args.subject}  (tissue WM+GM)")
+    print(f"\nE-field p95 (V/m) - montage {args.montage}, subject {args.subject}  (tissue WM+GM)")
     print(f"{'ROI':<16}" + "".join(f"{m:>12}" for m in available) + f"{'vs ISO':>9}{'vs DTI':>9}")
     for roi in roi_order:
         v = {m: results[m][roi]["p95"] for m in available}
@@ -130,7 +130,7 @@ def main():
         line += f"{pct_delta(md, v.get('ISO', np.nan)):>+8.1f}%{pct_delta(md, v.get('DTI', np.nan)):>+8.1f}%"
         print(line)
 
-    # Machine CSV (p95 + median per model) — the schema 06_cohort_stats consumes
+    # Machine CSV (p95 + median per model) - the schema 06_cohort_stats consumes
     outdir = os.path.join(args.results_root, args.subject)
     os.makedirs(outdir, exist_ok=True)
     csv_path = os.path.join(outdir, f"roi_efield_{args.montage}.csv")
@@ -145,7 +145,7 @@ def main():
             w.writerow(cells)
     print(f"\nCSV: {csv_path}")
     if len(available) < len(MODELS):
-        print(f"WARNING: only {available} present — cohort stats needs all of {MODELS}.")
+        print(f"WARNING: only {available} present - cohort stats needs all of {MODELS}.")
 
 
 if __name__ == "__main__":

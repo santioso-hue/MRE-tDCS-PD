@@ -1,4 +1,4 @@
-"""qc_figures.py — figures for the three-arm sims: per-model |E| overlay PNGs, the MD-dMRI minus DTI
+"""qc_figures.py - figures for the three-arm sims: per-model |E| overlay PNGs, the MD-dMRI minus DTI
 difference PNG, and the T1-space magnE NIfTIs (for fsleyes).
 
 NOT the analysis of record. Tissue-level |E| stats and the p95-range/spike validation are in
@@ -29,7 +29,7 @@ os.makedirs(OUT, exist_ok=True)
 t1img = nib.load(os.path.join(M2M, "T1.nii.gz"))
 T1 = np.asarray(t1img.dataobj, float); aff = t1img.affine; shape = t1img.shape
 seg = np.asarray(nib.load(os.path.join(M2M, "segmentation", "labeling.nii.gz")).dataobj).astype(int)
-brain = np.isin(seg, [2, 41, 3, 42])    # cerebral GM+WM — the region where |E| is meaningful
+brain = np.isin(seg, [2, 41, 3, 42])    # cerebral GM+WM - the region where |E| is meaningful
 
 
 def load_mesh(name):

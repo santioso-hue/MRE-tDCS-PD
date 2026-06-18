@@ -1,4 +1,4 @@
-"""08_tensor_divergence.py — per-ROI divergence between the single-shell DTI tensor and the QTI <D>
+"""08_tensor_divergence.py - per-ROI divergence between the single-shell DTI tensor and the QTI <D>
 tensor, computed BEFORE any E-field claim.
 
 The contribution is a MORE PRINCIPLED tensor construction (kurtosis-aware multi-shell <D> vs single-shell

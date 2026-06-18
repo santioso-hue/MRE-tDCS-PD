@@ -1,4 +1,4 @@
-"""test_tensor_divergence.py — synthetic-tensor checks for the divergence helpers used by
+"""test_tensor_divergence.py - synthetic-tensor checks for the divergence helpers used by
 analysis/08_tensor_divergence.py (eigh_6comp, fa_from_evals, v1_angle_deg). Build tensors with KNOWN
 eigenvalues / orientation and assert the helpers recover the angle, FA difference, and ratio difference.
 Run: simnibs_python tests/test_tensor_divergence.py

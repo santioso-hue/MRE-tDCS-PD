@@ -40,7 +40,7 @@ def main():
     v1 = evecs[:, :, 2]
     pdm = l3 > 0                                                 # PD voxels: ad/rd/u meaningful there
 
-    print(f"PART A — QTI covariance mean-tensor validation ({n:,} brain voxels)")
+    print(f"PART A - QTI covariance mean-tensor validation ({n:,} brain voxels)")
     checks = []
 
     def check(name, ok, detail):
@@ -80,7 +80,7 @@ def main():
     aniso = l1[pdm] / np.maximum(l3[pdm], 1e-6)
     print(f"\n  AUTHORITATIVE: base anisotropy median lambda1/lambda3 of <D> (PD voxels) = {np.median(aniso):.2f}")
 
-    print("\nPART B — orientation QA (registered QTI <D> vs dwi2cond DTI V1 in core WM)")
+    print("\nPART B - orientation QA (registered QTI <D> vs dwi2cond DTI V1 in core WM)")
     dti_t = os.path.join(cfg["M2M_DIR"], "DTI_coregT1_tensor.nii.gz")
     qti_t = os.path.join(cfg["REG_DIR"], "tensor_triaxial_T1.nii.gz")
     seg_f = os.path.join(cfg["M2M_DIR"], "final_tissues.nii.gz")

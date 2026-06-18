@@ -1,5 +1,5 @@
 """
-test_lobe_grouping.py — validate the recon-all ROI label schemes without recon-all data.
+test_lobe_grouping.py - validate the recon-all ROI label schemes without recon-all data.
 
 Usage:  conda run -n neuro python tests/test_lobe_grouping.py
 """

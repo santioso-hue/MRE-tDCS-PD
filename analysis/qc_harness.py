@@ -1,5 +1,5 @@
 """
-qc_harness.py — post-pipeline per-subject QC: one qc_summary.csv row per subject with sanity
+qc_harness.py - post-pipeline per-subject QC: one qc_summary.csv row per subject with sanity
 metrics, a PASS/FLAG per stage, and an overall verdict. Beyond the absolute thresholds, any
 metric > 3 MAD from the cohort median is also flagged. An outlier is a signal to inspect/fix.
 
@@ -16,6 +16,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 from _config import cfg  # noqa: E402
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _sims import sim_mesh, MODELS  # noqa: E402  (shared montage-aware mesh lookup)
+from _rois import eigvals_6comp, fa_from_evals  # noqa: E402  (shared eigendecomp + FA; one source of truth)
 
 # Absolute thresholds seeded from a single-subject pilot (n=1). [PROV] items are provisional
 # single-subject cutoffs to recalibrate as a cohort percentile (--calibrate) once 5-8 subjects
@@ -55,13 +56,9 @@ def _roi_dir(reg):
 
 
 def _eigs_masked(t, sel):
-    """Ascending eigenvalues (N,3) of the 6-comp tensor `t` over the selected voxels only.
-    Indexing t first avoids a full-volume (X,Y,Z,3,3) ~740 MB allocation."""
-    ts = t[sel]                                  # (N, 6)
-    M = np.zeros((ts.shape[0], 3, 3))
-    for a, (p, q) in enumerate([(0, 0), (0, 1), (0, 2), (1, 1), (1, 2), (2, 2)]):
-        M[:, p, q] = ts[:, a]; M[:, q, p] = ts[:, a]
-    return np.linalg.eigvalsh(M)
+    """Ascending eigenvalues (N,3) of the 6-comp tensor `t` over the selected voxels only. Delegates to
+    _rois.eigvals_6comp (one source of truth for the FSL pack + the eigvalsh values-only fast path)."""
+    return eigvals_6comp(t, sel)
 
 
 def _tensor_eigs(path, mask=None):
@@ -74,9 +71,8 @@ def _tensor_eigs(path, mask=None):
 
 
 def _fa(eigs):
-    l1, l2, l3 = eigs[:, 2], eigs[:, 1], eigs[:, 0]
-    num = np.sqrt(0.5 * ((l1 - l2) ** 2 + (l2 - l3) ** 2 + (l3 - l1) ** 2))
-    return np.nanmean(num / np.maximum(np.sqrt(l1 ** 2 + l2 ** 2 + l3 ** 2), 1e-12))
+    """Mean FA over voxels, from ascending eigenvalues (N,3); uses _rois.fa_from_evals (per-voxel)."""
+    return np.nanmean(fa_from_evals(eigs))
 
 
 def _vn_check(e, sigma0):
@@ -178,8 +174,8 @@ def qc_register(P):
     # The registered dMRI brain mask is ~2x the SAMSEG brain (includes neck/inferior FOV), so Dice or
     # centroid distance is size-confounded (caps ~0.62 / ~8 mm even when aligned). Use size-INDEPENDENT
     # signals instead:
-    #   (1) containment — does the dMRI FOV cover the brain? Catches gross misreg / FOV cutoff.
-    #   (2) CC reorientation — do corpus-callosum V1 point left-right? Catches tensor-reorient errors
+    #   (1) containment - does the dMRI FOV cover the brain? Catches gross misreg / FOV cutoff.
+    #   (2) CC reorientation - do corpus-callosum V1 point left-right? Catches tensor-reorient errors
     #       (highest-risk step: a flip/rotation collapses |V1_x| in the CC).
     brain = np.isin(seg, [2, 41, 3, 42, 10, 49, 11, 50, 12, 51, 13, 52, 16, 17, 18, 53, 54, 26, 58, 28, 60])
     dmm = dm > 0
@@ -214,7 +210,7 @@ def qc_register(P):
             m["reg_peduncle_siz"] = round(float(np.median(siz)), 3)
             if np.median(siz) < THR["peduncle_siz_min"]:
                 f.append("register:peduncle_not_SI")   # reorientation / registration off
-    # (3) edge alignment — gradient-magnitude correlation of registered b0 vs T1 inside the brain.
+    # (3) edge alignment - gradient-magnitude correlation of registered b0 vs T1 inside the brain.
     # Containment and CC-V1 miss a few-mm rigid shift that still covers the brain; a shift misaligns
     # tissue boundaries, so |grad| correlation drops sharply (BBR principle): ~0.19 aligned, ~-40% at
     # a 4 mm shift. (NMI on this b0/T1 pair sits near the information floor and barely moves, so unused.)
@@ -394,11 +390,11 @@ CALIB = {"reg_grad_corr": "low", "reg_cc_v1x": "low", "reg_containment": "low",
 def _calibrate(out):
     p = os.path.join(out, "qc_summary.csv")
     if not os.path.exists(p):
-        print(f"no cohort CSV at {p} — run the harness over the cohort first"); return
+        print(f"no cohort CSV at {p} - run the harness over the cohort first"); return
     rows = list(csv.DictReader(open(p)))
     print(f"Cohort threshold calibration from {len(rows)} subject(s) in {p}")
     if len(rows) < 5:
-        print("  WARNING: < 5 subjects — percentile tails are unstable; treat as indicative only.")
+        print("  WARNING: < 5 subjects - percentile tails are unstable; treat as indicative only.")
     for k, side in CALIB.items():
         vals = np.array([float(r[k]) for r in rows
                          if r.get(k) not in (None, "", "nan")], float)
@@ -517,7 +513,7 @@ def _overlay_png(P, png_dir):
         if ov is not None:
             a.imshow(np.rot90(np.ma.masked_equal(ov, 0)), cmap="tab10", alpha=0.5, vmin=1, vmax=10)
         a.axis("off")
-    fig.suptitle(f"{P['id']} — T1 + Tier-1 volume ROIs"); fig.tight_layout()
+    fig.suptitle(f"{P['id']} - T1 + Tier-1 volume ROIs"); fig.tight_layout()
     fig.savefig(os.path.join(png_dir, f"{P['id']}_overlay.png"), dpi=80); plt.close(fig)
 
 
