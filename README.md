@@ -72,7 +72,7 @@ bash           pipeline/05_register_mre_to_T1.sh # MRE maps -> T1 (post-hoc)
 ## Layout
 
 ```
-config/    config.example.sh (template), charm_highquality.ini
+config/    config.example.sh (template), cohort.example.json (cohort manifest)
 pipeline/  00_charm, 01_dwi2cond, run_qti_cov_cohort.m + .sh (QTI covariance fit, MATLAB), 02_register_dmri_to_T1,
            03_build_conductivity_tensor, 04_run_simulations, 05_register_mre_to_T1,
            prepare_dmri_tensor.py (called by 02), _config.py, conductivity_models_derivation.md (methods)

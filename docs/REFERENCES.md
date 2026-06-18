@@ -116,7 +116,7 @@ evaluated and not adopted under `'vn'`; plain ⟨D⟩ (no FWE) is the `--meanD` 
 
 ## PD-Specific Diffusion and Mechanical Properties
 
-**Olsson F, Nilsson M, Stening EM, Lövdén M, Persson J (2025).** Effects of Parkinson's Disease on Mechanical and Microstructural Properties of the Brain.
+**Olsson C, Nilsson M, Stening EM, Lövdén M, Persson J (2025).** Effects of Parkinson's Disease on Mechanical and Microstructural Properties of the Brain.
 *[Journal TBD — from PMC12351346]*
 → **The dataset paper.** MRE + MD-dMRI in PD (n=12) vs HC (n=17), Philips Ingenia CX 3T. Key PD findings: SNc/VTA μFA↓, MD↑; NAC FA↓ (d=−1.15, largest effect); temporal/occipital WM softening (MRE). Defines our ROI set and primary scientific context.
 

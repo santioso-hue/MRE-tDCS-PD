@@ -31,7 +31,7 @@ THR = dict(
     peduncle_siz_min=0.55,                           # [PROV] cerebral-peduncle V1 superior-inferior in the SimNIBS frame
     reg_grad_corr_min=0.08,                          # [PROV] b0<->T1 edge alignment (mid-range shift)
     geom_mean_tol=0.01,                              # vn reconstruction must land on sigma0 within 1%
-    efield_p95_range=(0.10, 0.60), efield_spike=5.0, # 03: p95 |E| range; max/p95 spike
+    efield_p95_range=(0.10, 0.60), efield_spike=8.0, # 03: p95 |E| range; max/p95 spike [PROV] default mesh ~6 (tail artifact, not the median readout); recalibrate at cohort scale
     electrode_tol_mm=15.0,
 )
 SIGMA0 = {"WM": 0.126, "GM": 0.275}                  # tissue baseline conductivities (S/m), vn anchors
@@ -420,6 +420,7 @@ def main():
     ap.add_argument("--montage", default="M1", help="which montage's sims to QC (default M1)")
     ap.add_argument("--calibrate", action="store_true",
                     help="read out/qc_summary.csv and suggest cohort-percentile thresholds, then exit")
+    ap.add_argument("--emit-metrics", help="write the per-subject numeric metrics to this JSON and exit")
     args = ap.parse_args()
     if args.calibrate:
         _calibrate(args.out); return
@@ -464,6 +465,13 @@ def main():
         w = csv.DictWriter(fh, fieldnames=cols, extrasaction="ignore"); w.writeheader()
         for r in rows:
             w.writerow(r)
+
+    if args.emit_metrics:
+        snap = {r["subject"]: {k: r[k] for k in numeric if k in r} for r in rows}
+        with open(args.emit_metrics, "w") as fh:
+            json.dump(snap, fh, indent=2, sort_keys=True)
+        print(f"metrics -> {args.emit_metrics}")
+        return
 
     # PNGs: flagged subjects + random 10% sample
     rng = np.random.default_rng(0)

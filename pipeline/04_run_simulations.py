@@ -27,9 +27,6 @@ NOTE: do NOT pass fn_tensor_nifti with tms_flex_opt/tes_flex_opt — documented 
 """
 import os, sys, argparse
 
-os.environ.setdefault("OMP_NUM_THREADS", "1")          # OpenMP guard, set before importing simnibs
-os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
-
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _config import cfg  # noqa: E402
 import simnibs            # noqa: E402
