@@ -27,7 +27,7 @@ papers/
 # QC harness outputs (regenerable: re-run analysis/qc_harness.py)
 analysis/qc/
 
-# Sim comparison/visualization outputs (regenerable: analysis/compare_sims.py)
+# Sim figure outputs (regenerable: analysis/qc_figures.py)
 analysis/sim_compare/
 
 # Analysis result tables (regenerable: re-run the analysis scripts)

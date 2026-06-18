@@ -65,7 +65,7 @@ Quality control and the post-hoc MRE comparison:
 
 ```bash
 simnibs_python analysis/qc_harness.py            # per-subject QC across all stages
-simnibs_python analysis/compare_sims.py          # tissue-level ISO/DTI/MD-dMRI E-field comparison
+simnibs_python analysis/qc_figures.py            # |E| overlay + MD-dMRI-minus-DTI difference figures
 bash           pipeline/05_register_mre_to_T1.sh # MRE maps -> T1 (post-hoc)
 ```
 
@@ -77,7 +77,7 @@ pipeline/  00_charm, 01_dwi2cond, run_qti_cov_cohort.m + .sh (QTI covariance fit
            03_build_conductivity_tensor, 04_run_simulations, 05_register_mre_to_T1,
            prepare_dmri_tensor.py (called by 02), _config.py, conductivity_models_derivation.md (methods)
 analysis/  build_rois (recon-all ROIs), _rois (ROI resolver), extract_roi_efield,
-           mre_efield_comparison, compare_sims, qc_harness
+           mre_efield_comparison, qc_harness (stats/QC), qc_figures (PNGs)
 docs/      references
 tests/     mean-tensor reconstruction + QC-harness checks
 ```

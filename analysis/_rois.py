@@ -14,6 +14,33 @@ import json
 import numpy as np
 import nibabel as nib
 
+TENSOR_ORDER = [(0, 0), (0, 1), (0, 2), (1, 1), (1, 2), (2, 2)]  # FSL dtifit 6-comp -> symmetric 3x3
+
+
+def eigh_6comp(t6, sel):
+    """Eigendecomposition of a 6-component symmetric-tensor volume (FSL order xx,xy,xz,yy,yz,zz) over
+    the selected voxels `sel` (bool over the spatial dims). Returns (evals ascending (N,3), evecs (N,3,3));
+    evecs[:, :, 2] is the principal eigenvector V1. The single shared copy for the analysis layer."""
+    comp = t6[sel]
+    m = np.zeros((comp.shape[0], 3, 3))
+    for a, (p, q) in enumerate(TENSOR_ORDER):
+        m[:, p, q] = comp[:, a]; m[:, q, p] = comp[:, a]
+    return np.linalg.eigh(m)
+
+
+def fa_from_evals(ev):
+    """Fractional anisotropy from ascending eigenvalues (N,3)."""
+    l3, l2, l1 = ev[:, 0], ev[:, 1], ev[:, 2]
+    num = np.sqrt(0.5 * ((l1 - l2) ** 2 + (l2 - l3) ** 2 + (l3 - l1) ** 2))
+    return num / np.maximum(np.sqrt(l1 ** 2 + l2 ** 2 + l3 ** 2), 1e-12)
+
+
+def v1_angle_deg(evecs_a, evecs_b):
+    """Acute angle (deg) between principal eigenvectors evecs[:, :, 2], per voxel. Sign-agnostic
+    (an eigenvector's sign is arbitrary), so it uses |cos|."""
+    v1a, v1b = evecs_a[:, :, 2], evecs_b[:, :, 2]
+    return np.degrees(np.arccos(np.clip(np.abs(np.sum(v1a * v1b, axis=1)), 0.0, 1.0)))
+
 
 def load_labeled(reg_dir):
     """Return (labeled int array, affine, {label:name}) in subject/mesh T1 space, from the
@@ -68,25 +95,41 @@ def sample_volume_medians(map_path, labeled, lab_affine, names, gate=None):
 
 
 def sample_tensor_aniso_medians(tensor_path, labeled, lab_affine, names):
-    """Median eigenvalue ratio (lambda1/lambda3) of a 6-component symmetric tensor
-    (order xx,xy,xz,yy,yz,zz) within each ROI label."""
+    """Median eigenvalue ratio lambda1/lambda3 of a 6-component symmetric tensor (order xx,xy,xz,yy,yz,zz)
+    within each ROI label, over POSITIVE-DEFINITE voxels only (degenerate voxels excluded, mirroring
+    qc_harness._vn_check)."""
     img = nib.load(tensor_path)
     t = np.asarray(img.dataobj, dtype=float)            # (X,Y,Z,6)
     lab = _labels_on_grid(img, labeled, lab_affine)
-    order = [(0, 0), (0, 1), (0, 2), (1, 1), (1, 2), (2, 2)]
     out = {}
     for k, n in names.items():
         sel = (lab == k) & np.isfinite(t[..., 0]) & (np.abs(t[..., 0]) > 1e-6)
-        comp = t[sel]
-        if comp.shape[0] == 0:
+        if not sel.any():
             out[n] = np.nan
             continue
-        m = np.zeros((comp.shape[0], 3, 3))
-        for a, (p, q) in enumerate(order):
-            m[:, p, q] = comp[:, a]
-            m[:, q, p] = comp[:, a]
-        ev = np.linalg.eigvalsh(m)
-        out[n] = float(np.median(ev[:, 2] / np.maximum(ev[:, 0], 1e-9)))
+        ev, _ = eigh_6comp(t, sel)
+        # positive-definite gate on the raw smallest eigenvalue (um2/ms): mirrors qc_harness._vn_check
+        # and 03's EPS=1e-3 floor. Without it a near-zero lambda3 gives an explosive lambda1/lambda3.
+        pd = ev[:, 0] > 1e-3
+        out[n] = float(np.median(ev[pd, 2] / ev[pd, 0])) if pd.any() else np.nan
+    return out
+
+
+def sample_tensor_fa_medians(tensor_path, labeled, lab_affine, names):
+    """Median FA of a 6-component tensor within each ROI, over positive-definite voxels (same gate as
+    sample_tensor_aniso_medians). Used by 05 for the FA(<D>) vs uFA divergence."""
+    img = nib.load(tensor_path)
+    t = np.asarray(img.dataobj, dtype=float)
+    lab = _labels_on_grid(img, labeled, lab_affine)
+    out = {}
+    for k, n in names.items():
+        sel = (lab == k) & np.isfinite(t[..., 0]) & (np.abs(t[..., 0]) > 1e-6)
+        if not sel.any():
+            out[n] = np.nan
+            continue
+        ev, _ = eigh_6comp(t, sel)
+        pd = ev[:, 0] > 1e-3
+        out[n] = float(np.median(fa_from_evals(ev[pd]))) if pd.any() else np.nan
     return out
 
 

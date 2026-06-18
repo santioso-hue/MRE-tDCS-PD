@@ -4,9 +4,9 @@
 #
 # Usage: bash analysis/07_build_tier3_nuclei.sh
 #
-# These nuclei are smaller than a 2.5 mm dMRI / 3 mm MRE voxel and sit within a few mm of each
-# other: E-field only (no MRE cross-corr), kept as overlap-allowed masks. Only CIT168 resolves
-# them (FreeSurfer/HarvardOxford cannot).
+# These nuclei are smaller than a 2.5 mm dMRI / 3 mm MRE voxel and sit within a few mm of each other,
+# so they are EXPLORATORY and E-field-only: overlap-allowed masks, no MRE cross-corr, NOT headline
+# numbers (an SNc |E| is not a reportable result). Only CIT168 resolves them (FreeSurfer/HarvardOxford cannot).
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../config/config.sh"
@@ -23,13 +23,15 @@ for f in "$MAT" "$PAULI" "$T1REF"; do
   [ -f "$f" ] || { echo "ERROR: missing $f — run 06_build_atlas_rois.sh first."; exit 1; }
 done
 
-# CIT168/Pauli 4D volume indices (verified from _atlas_cache/pauli_labels.txt)
-names=(SNc SNr VTA RN STN)
-idxs=( 6   8   10  7  15)
+# ---- Tier-3 config: every tier-3 magic number lives here (PROB_THR is passed to _build_tier3_labels.py) ----
+# CIT168/Pauli 4D volume indices, verified from _atlas_cache/pauli_labels.txt.
+NUCLEI=(SNc SNr VTA RN STN)
+IDX=(   6   8   10  7  15)
+PROB_THR=0.25                    # CIT168 probability cutoff (tiny nuclei -> permissive)
 
 echo "Warp Tier-3 nuclei (CIT168 2009c -> NLin6 -> subject)"
-for n in "${!names[@]}"; do
-  nm="${names[$n]}"; i="${idxs[$n]}"
+for n in "${!NUCLEI[@]}"; do
+  nm="${NUCLEI[$n]}"; i="${IDX[$n]}"
   fslroi "$PAULI" "$T3/_mni_${nm}.nii.gz" "$i" 1
   flirt -in "$T3/_mni_${nm}.nii.gz" -ref "$NLIN6" -applyxfm -init "$MAT" \
         -out "$T3/_nlin6_${nm}.nii.gz" -interp trilinear >/dev/null 2>&1
@@ -38,5 +40,5 @@ for n in "${!names[@]}"; do
   echo "  $nm warped"
 done
 
-"$SIMNIBS_BIN/simnibs_python" "$SCRIPT_DIR/_build_tier3_labels.py"
+TIER3_THR="$PROB_THR" TIER3_NUCLEI="${NUCLEI[*]}" "$SIMNIBS_BIN/simnibs_python" "$SCRIPT_DIR/_build_tier3_labels.py"
 echo "Done. Tier-3 nuclei -> $T3/roi_{L,R}_{SNc,SNr,VTA,RN,STN}.nii.gz (+ tier3_labeled.nii.gz)."

@@ -11,8 +11,8 @@ from _config import cfg  # noqa: E402
 
 REG = cfg["REG_DIR"]; M2M = cfg["M2M_DIR"]
 T3 = os.path.join(REG, "atlas_rois", "tier3")
-THR = 0.25                      # prob threshold (these are tiny — keep it permissive)
-NUCLEI = ["SNc", "SNr", "VTA", "RN", "STN"]
+THR = float(os.environ.get("TIER3_THR", "0.25"))           # prob threshold; set by 07 (single source)
+NUCLEI = os.environ.get("TIER3_NUCLEI", "SNc SNr VTA RN STN").split()
 
 t1 = nib.load(os.path.join(M2M, "T1.nii.gz"))
 aff = t1.affine; shape = t1.shape

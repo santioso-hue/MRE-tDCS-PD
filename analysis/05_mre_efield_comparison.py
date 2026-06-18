@@ -24,7 +24,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "pipeline"))
 from _config import cfg  # noqa: E402
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _rois import load_labeled, sample_volume_medians, sample_tensor_aniso_medians, assign_mesh_labels  # noqa: E402
+from _rois import (load_labeled, sample_volume_medians, sample_tensor_aniso_medians,  # noqa: E402
+                   sample_tensor_fa_medians, assign_mesh_labels)
 from _sims import sim_mesh  # noqa: E402  (shared montage-aware mesh lookup)
 
 WORK, M2M, REG = cfg["WORK_DIR"], cfg["M2M_DIR"], cfg["REG_DIR"]
@@ -48,6 +49,20 @@ def build_gate():
     return gate, float((gate & brain).sum() / max(int(brain.sum()), 1))
 
 
+def load_tensor_divergence():
+    """Per-ROI (V1 angle, delta lam1/lam3) from 08_tensor_divergence.py's CSV, if present. Absent until 08
+    has run (gated on the DTI arm); returns {} so the correlations degrade gracefully."""
+    p = os.path.join(os.path.dirname(__file__), "results", cfg["SUBJECT"], "tensor_divergence.csv")
+    out = {}
+    if os.path.exists(p):
+        for r in csv.DictReader(open(p)):
+            try:
+                out[r["ROI"]] = (float(r["angle_med"]), float(r["dR1_med"]))
+            except (KeyError, ValueError):
+                pass
+    return out
+
+
 def extract_subject(gate):
     labeled, lab_aff, names = load_labeled(REG)
     rows = {names[k]: {} for k in names}
@@ -66,6 +81,12 @@ def extract_subject(gate):
     if os.path.exists(TENSOR):
         for roi, val in sample_tensor_aniso_medians(TENSOR, labeled, lab_aff, names).items():
             rows[roi]["cond_aniso"] = val
+        for roi, val in sample_tensor_fa_medians(TENSOR, labeled, lab_aff, names).items():
+            rows[roi]["FA_meanD"] = val
+    # tensor-divergence (08) per ROI, if 08 has run (gated on the DTI arm)
+    for roi, (ang, dr1) in load_tensor_divergence().items():
+        if roi in rows:
+            rows[roi]["tdiv_angle"] = ang; rows[roi]["tdiv_dR1"] = dr1
     # E-field per model: median (primary) + p95 (sensitivity) over GM+WM elements in the ROI
     for m, path in MESHES.items():
         if not path or not os.path.exists(path):
@@ -81,6 +102,11 @@ def extract_subject(gate):
     for r in rows.values():
         if np.isfinite(r.get("E_MDdMRI", np.nan)) and r.get("E_DTI", 0):
             r["dE_model"] = 100 * (r["E_MDdMRI"] - r["E_DTI"]) / r["E_DTI"]
+        # microstructure divergence: uFA (microscopic anisotropy) minus FA(<D>) (macroscopic). Large in
+        # crossing/dispersed-fiber voxels, where single-shell DTI FA conflates micro-anisotropy with
+        # orientation dispersion. uFA is an EXPLANATION variable here, NOT a conductivity input.
+        if np.isfinite(r.get("uFA", np.nan)) and np.isfinite(r.get("FA_meanD", np.nan)):
+            r["uFA_minus_FA"] = r["uFA"] - r["FA_meanD"]
     return rows
 
 
@@ -92,8 +118,8 @@ def main():
 
     out_csv = os.path.join(os.path.dirname(__file__), "results", cfg["SUBJECT"], "mre_efield_per_roi.csv")
     os.makedirs(os.path.dirname(out_csv), exist_ok=True)
-    keys = ["stiffness", "stiffness_ung", "alpha", "MD", "uFA", "cond_aniso",
-            "E_ISO", "E_DTI", "E_MDdMRI", "E_MDdMRI_p95", "dE_model"]
+    keys = ["stiffness", "stiffness_ung", "alpha", "MD", "uFA", "FA_meanD", "uFA_minus_FA", "cond_aniso",
+            "E_ISO", "E_DTI", "E_MDdMRI", "E_MDdMRI_p95", "dE_model", "tdiv_angle", "tdiv_dR1"]
     with open(out_csv, "w", newline="") as f:
         w = csv.writer(f); w.writerow(["ROI"] + keys)
         for roi, r in rows.items():
@@ -113,6 +139,21 @@ def main():
         rg, ng = corr(a, "stiffness")          # GATED column (CSF-adjacent cortex excluded)
         ru, nu = corr(a, "stiffness_ung")      # ungated sensitivity
         print(f"  {a+' vs stiffness':<26}{f'rho={rg:+.2f}(n={ng})':>14}{f'rho={ru:+.2f}(n={nu})':>14}")
+
+    # Explanation layer: do the conductivity arms diverge where FA and uFA disagree? Hypothesis -- the arms
+    # diverge (large tensor divergence + nonzero dE_model) in ROIs where single-shell DTI FA and the QTI uFA
+    # disagree most (crossing/dispersed fibers). uFA is the EXPLANATION for where the more-principled <D>
+    # tensor departs from DTI; it is NOT used as a conductivity input.
+    print("\nExplanation layer (uFA-FA divergence vs the model effect; across ROIs, this subject):")
+    for b, lbl in [("dE_model", "dE_model = E_MD-dMRI - E_DTI"),
+                   ("tdiv_angle", "DTI-vs-<D> V1 angle (08)"),
+                   ("tdiv_dR1", "delta(lam1/lam3) DTI-vs-<D> (08)")]:
+        rho, nn = corr("uFA_minus_FA", b)
+        note = "" if nn >= 4 else "  [needs the DTI arm / 08]"
+        print(f"  (uFA-FA) vs {lbl:<32}{f'rho={rho:+.2f}(n={nn})':>16}{note}")
+    print("  Expected POSITIVE (arms diverge where uFA>FA = dispersion). A null is reported as-is, not")
+    print("  buried -- it would mean the divergence is not dispersion-driven, which is itself informative.")
+
     print("\nGATED is primary (Olsson MRE handling); ungated is the sensitivity. n=1 subject: this is an "
           "across-region trend, not a statistical result. The cohort runner aggregates this per subject.")
 
