@@ -78,6 +78,8 @@ venv/
 
 # Local machine config (paths, subject ID)
 config/config.sh
+# Cohort manifest carries scan-date subject IDs and ages - never tracked (config/cohort.example.json is the template)
+config/cohort.json
 
 # Pilot (FullPD5) - superseded by the cohort; kept locally for reference, not tracked
 pipeline/run_qti_cov.m
