@@ -24,7 +24,7 @@ Output: results/cohort_stats_<montage>_<stat>.csv (one row per ROI; H1/H3/age co
 
 Usage:  conda run -n neuro python analysis/06_cohort_stats.py [--stat p95|median] [--cohort config/cohort.json]
 """
-import os, sys, csv, json, argparse
+import os, sys, csv, json, glob, argparse
 import numpy as np
 from scipy import stats
 
@@ -140,11 +140,21 @@ def main():
     with open(args.cohort) as f:
         cohort = json.load(f)
     subjects = cohort["subjects"]
+    manifest_ids = {s["id"] for s in subjects}
     n_pd_all = sum(1 for s in subjects if s["group"] == "PD")
     print(f"Cohort: {len(subjects)} subjects ({n_pd_all} PD, {len(subjects) - n_pd_all} HC). "
           f"Statistic: {args.stat}")
 
     for montage in cohort["montages"]:
+        # A subject with results on disk but no manifest entry is read by nobody (load_matrix iterates the
+        # manifest), so it drops out of the stats silently. Surface it; the fix is to regenerate the
+        # manifest with analysis/build_cohort_manifest.py so the subject set tracks the share.
+        on_disk = {os.path.basename(os.path.dirname(p))
+                   for p in glob.glob(os.path.join(args.results, "*", f"roi_efield_{montage}.csv"))}
+        unlisted = sorted(on_disk - manifest_ids)
+        if unlisted:
+            print(f"  [{montage}] WARNING: {len(unlisted)} subject(s) have results but are absent from "
+                  f"the manifest -> excluded from stats: {', '.join(unlisted)}")
         rois, mats, kept = load_matrix(subjects, args.results, montage, args.stat)
         group = np.array([1 if s["group"] == "PD" else 0 for s in kept])   # 1=PD, 0=HC, aligned to kept
         age = np.array([float(s["age"]) for s in kept])
