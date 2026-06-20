@@ -16,7 +16,7 @@ Usage:
   COHORT_SHARE is the default --share. --montages must list only montages actually run by the cohort
   runner (06 needs a roi_efield_<montage>.csv per listed montage); default M1.
 """
-import os, sys, json, argparse, re
+import os, sys, json, argparse
 
 GROUP_FROM_ID = [("patient", "PD"), ("control", "HC")]   # substring (case-insensitive) -> group
 
@@ -39,9 +39,12 @@ def read_subjects_info(path):
             if len(parts) < 3:
                 continue
             sid, age, sex = parts[0], parts[1], parts[2]
-            if not re.fullmatch(r"\d+", age):
+            try:
+                age_val = int(round(float(age)))   # accept "62" or "62.5"; round to whole years
+            except ValueError:
+                print(f"  warning: row for {sid} has a non-numeric age {age!r}; skipping that row")
                 continue
-            info[sid] = (int(age), sex)
+            info[sid] = (age_val, sex)
     return info
 
 

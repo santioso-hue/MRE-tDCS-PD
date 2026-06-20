@@ -59,6 +59,14 @@ def main():
         ck("montages passed through", man["montages"] == ["M1", "DLPFC"], str(man["montages"]))
         ck("subjects sorted by id", [s["id"] for s in subs] == sorted(ids))
 
+        # a non-integer age must be accepted (rounded), not silently dropped and then mis-reported as a
+        # missing SubjectsInfo row (regression guard for the read_subjects_info age-format skip)
+        info_dec = [("MockPatient9", "53.6", "M"), ("MockControl9", "60", "F")]
+        share_dec = make_share(tmp, info_dec, [r[0] for r in info_dec], name="share_dec")
+        bdec = {s["id"]: s for s in bcm.build(share_dec, ["M1"])["subjects"]}
+        ck("decimal age accepted, rounded", bdec.get("MockPatient9", {}).get("age") == 54,
+           str(bdec.get("MockPatient9")))
+
         # a MUDI subject with no SubjectsInfo row must fail loudly, not silently drop
         share2 = make_share(tmp, info[:3], ids, name="share2")   # info missing the 4th subject
         try:
