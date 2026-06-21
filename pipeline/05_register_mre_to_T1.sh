@@ -39,9 +39,12 @@ assert_conformed_grid() {
 
 T1_REF="$M2M_DIR/T1.nii.gz"
 ORIG="$DATA_DIR/recon/mri/orig.mgz"           # recon-all orig = the FS-conformed grid the MRE maps live on
-for f in "$T1_REF" "$ORIG" "$MRE_STIFFNESS" "$MRE_ALPHA"; do
+for f in "$T1_REF" "$ORIG" "$MRE_STIFFNESS"; do
     [ -f "$f" ] || { echo "ERROR: required input missing: $f"; exit 1; }
 done
+# alpha is optional: register it only when present (05_mre runs on stiffness alone if it is absent).
+HAVE_ALPHA=0
+if [ -n "${MRE_ALPHA:-}" ] && [ -f "$MRE_ALPHA" ]; then HAVE_ALPHA=1; else echo "note: MRE alpha map absent -> registering stiffness only"; fi
 mkdir -p "$REG_DIR"; cd "$REG_DIR"
 
 echo "FS-conformed T1 -> charm T1 affine (orig.mgz, 6-DOF MI; same transform build_rois uses)"
@@ -51,15 +54,18 @@ flirt -in orig_fs.nii.gz -ref "$T1_REF" -omat fs_to_charm.mat -dof 6 -cost mutua
 [ -s fs_to_charm.mat ] || { echo "ERROR: orig->charm flirt failed"; exit 1; }
 
 assert_conformed_grid "$MRE_STIFFNESS" orig_fs.nii.gz
-assert_conformed_grid "$MRE_ALPHA"     orig_fs.nii.gz
-
-echo "resample MRE stiffness + alpha into charm T1"
+echo "resample MRE stiffness into charm T1"
 flirt -in "$MRE_STIFFNESS" -ref "$T1_REF" -applyxfm -init fs_to_charm.mat -interp trilinear -out mre_stiffness_T1.nii.gz
-flirt -in "$MRE_ALPHA"     -ref "$T1_REF" -applyxfm -init fs_to_charm.mat -interp trilinear -out mre_alpha_T1.nii.gz
-# alpha (springpot exponent) is physically in (0,1]; the delivered map carries Helmholtz-inversion
-# artifacts outside that range (~ -1.5..1.5). Mask them to 0 (= dropped downstream like masked background),
-# matching the subject-level "alphapositive" QC, so only valid alpha enters the medians/correlations.
-"$SIMNIBS_BIN/simnibs_python" - <<'PY'
+require_nonzero mre_stiffness_T1.nii.gz
+
+if [ "$HAVE_ALPHA" = 1 ]; then
+    assert_conformed_grid "$MRE_ALPHA" orig_fs.nii.gz
+    echo "resample MRE alpha into charm T1"
+    flirt -in "$MRE_ALPHA" -ref "$T1_REF" -applyxfm -init fs_to_charm.mat -interp trilinear -out mre_alpha_T1.nii.gz
+    # alpha (springpot exponent) is physically in (0,1]; the delivered map carries Helmholtz-inversion
+    # artifacts outside that range (~ -1.5..1.5). Mask them to 0 (= dropped downstream like masked background),
+    # matching the subject-level "alphapositive" QC, so only valid alpha enters the medians/correlations.
+    "$SIMNIBS_BIN/simnibs_python" - <<'PY'
 import nibabel as nib, numpy as np
 im = nib.load("mre_alpha_T1.nii.gz"); a = np.asarray(im.dataobj, np.float64)
 bad = ~np.isfinite(a) | (a <= 0) | (a > 1)
@@ -67,8 +73,10 @@ a[bad] = 0.0
 nib.save(nib.Nifti1Image(a.astype(np.float32), im.affine, im.header), "mre_alpha_T1.nii.gz")
 print(f"  alpha validity mask: zeroed {int(bad.sum()):,} out-of-(0,1] voxels")
 PY
-require_nonzero mre_stiffness_T1.nii.gz
-require_nonzero mre_alpha_T1.nii.gz
+    require_nonzero mre_alpha_T1.nii.gz
+else
+    rm -f mre_alpha_T1.nii.gz    # drop any stale alpha so 05_mre skips it
+fi
 rm -f orig_fs.nii.gz
 
-echo "Done -> registration/mre_{stiffness,alpha}_T1.nii.gz. Next: simnibs_python analysis/05_mre_efield_comparison.py"
+echo "Done -> registration/mre_stiffness_T1.nii.gz (+ mre_alpha_T1.nii.gz when present). Next: simnibs_python analysis/05_mre_efield_comparison.py"

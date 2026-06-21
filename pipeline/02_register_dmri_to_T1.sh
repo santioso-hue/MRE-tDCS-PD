@@ -69,10 +69,22 @@ PY
 require_nonzero "$T2_BRAIN"
 
 echo ""
-echo "Step 3: S0-driven 12-DOF affine, dMRI S0 -> charm T2 (Mattes MI)"
-flirt -in s0_dMRI.nii.gz -ref "$T2_BRAIN" -omat dMRI_to_T1_aff.mat -dof 12 -cost mutualinfo \
+echo "Step 3: S0-driven dMRI S0 -> charm T2 (Mattes MI): rigid pre-align, then 12-DOF affine"
+# Rigid first (cannot scale-collapse) to seed the affine: a bare 12-DOF MI affine can diverge to a
+# degenerate ~20x scale-collapse on some subjects, sending the dMRI outside the brain.
+flirt -in s0_dMRI.nii.gz -ref "$T2_BRAIN" -omat dMRI_to_T1_rigid.mat -dof 6 -cost mutualinfo \
       -searchrx -25 25 -searchry -25 25 -searchrz -25 25
+flirt -in s0_dMRI.nii.gz -ref "$T2_BRAIN" -omat dMRI_to_T1_aff.mat -dof 12 -cost mutualinfo \
+      -init dMRI_to_T1_rigid.mat
 [ -s dMRI_to_T1_aff.mat ] || { echo "ERROR: S0 affine failed"; exit 1; }
+# Abort loudly on a degenerate affine: otherwise the tensor lands outside the brain and the MD-dMRI sim
+# silently falls back to isotropic, producing a plausible-but-wrong E-field.
+"$SIMNIBS_BIN/simnibs_python" - <<'PY' || { echo "ERROR: dMRI->T1 affine is degenerate (FLIRT diverged); aborting to avoid a silent isotropic fallback."; exit 1; }
+import numpy as np, sys
+d = abs(np.linalg.det(np.loadtxt("dMRI_to_T1_aff.mat")[:3, :3]))
+print(f"  dMRI->T1 affine |det| = {d:.4f}")
+sys.exit(0 if 0.3 < d < 3.0 else 1)
+PY
 
 echo ""
 echo "Step 4: carry every map to T1 with that one affine"

@@ -34,11 +34,38 @@ cd "$OUT_DIR"
 
 echo "charm: subject=$SUBJECT_ID  T1=$T1  T2=$T2  output=$OUT_DIR  settings=${INI:-defaults}"
 
-# pipefail propagates charm's exit through the tee, so a failed segmentation aborts here
+# Single-thread charm: the multithreaded samseg affine registration can livelock on macOS (spins at full CPU,
+# never finishing). The OMP/KMP/ITK thread limits avoid it; scoped here so other stages stay multithreaded.
+export OMP_NUM_THREADS=1
+export KMP_DUPLICATE_LIB_OK=TRUE
+export ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS=1
+# Watchdog: kill charm if it exceeds CHARM_TIMEOUT so a hung subject fails fast instead of blocking the cohort.
+CHARM_TIMEOUT="${CHARM_TIMEOUT:-10800}"
+LOG="charm_${SUBJECT_ID}.log"
 if [ -n "$INI" ]; then
-    charm "$SUBJECT_ID" "$T1" "$T2" --forceqform --usesettings "$INI_PATH" 2>&1 | tee "charm_${SUBJECT_ID}.log"
+    charm "$SUBJECT_ID" "$T1" "$T2" --forceqform --usesettings "$INI_PATH" > "$LOG" 2>&1 &
 else
-    charm "$SUBJECT_ID" "$T1" "$T2" --forceqform 2>&1 | tee "charm_${SUBJECT_ID}.log"
+    charm "$SUBJECT_ID" "$T1" "$T2" --forceqform > "$LOG" 2>&1 &
+fi
+cpid=$!
+( set +e
+  e=0
+  while kill -0 "$cpid" 2>/dev/null; do
+      sleep 30; e=$((e+30))
+      if [ "$e" -ge "$CHARM_TIMEOUT" ]; then
+          echo "WATCHDOG: charm exceeded ${CHARM_TIMEOUT}s, killing $cpid" >> "$LOG"
+          pkill -9 -P "$cpid" 2>/dev/null   # reap charm's children first, then charm itself
+          kill -9 "$cpid" 2>/dev/null
+          break
+      fi
+  done ) &
+wpid=$!
+rc=0; wait "$cpid" || rc=$?
+kill "$wpid" 2>/dev/null || true
+if [ "$rc" -ne 0 ]; then
+    echo "ERROR: charm failed or timed out (rc=$rc) - see $OUT_DIR/$LOG"
+    tail -8 "$LOG" 2>/dev/null || true
+    exit 1
 fi
 
 [ -d "m2m_${SUBJECT_ID}" ] || { echo "ERROR: charm did not produce m2m_${SUBJECT_ID}/ - see charm_${SUBJECT_ID}.log"; exit 1; }

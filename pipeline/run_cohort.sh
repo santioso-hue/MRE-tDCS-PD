@@ -36,8 +36,11 @@ for S in "${SUBJECTS[@]}"; do
         for e in nii.gz bval bvec; do ln -sf "$SHARE/MUDI_synb0/$S/$f.$e" "$D/dmri/$f.$e"; done
     done
     ln -sfn "$SHARE/ReconAlls/$S" "$D/recon"
-    ln -sf "$SHARE/MRE_ToT1_202402/$S/MRE_stiffness_ToT1_202402.nii.gz"         "$D/mre/MRE_stiffness_ToT1.nii.gz"
-    ln -sf "$SHARE/MRE_ToT1_202402/$S/MRE_alphaparam_masked_ToT1_202402.nii.gz" "$D/mre/MRE_alpha_ToT1.nii.gz"
+    # MRE: stiffness is required, alpha optional (some subjects lack it). Symlink only what exists.
+    mre_stiff_src="$SHARE/MRE_ToT1_202402/$S/MRE_stiffness_ToT1_202402.nii.gz"
+    mre_alpha_src="$SHARE/MRE_ToT1_202402/$S/MRE_alphaparam_masked_ToT1_202402.nii.gz"
+    if [ -f "$mre_stiff_src" ]; then ln -sf "$mre_stiff_src" "$D/mre/MRE_stiffness_ToT1.nii.gz"; else rm -f "$D/mre/MRE_stiffness_ToT1.nii.gz"; fi
+    if [ -f "$mre_alpha_src" ]; then ln -sf "$mre_alpha_src" "$D/mre/MRE_alpha_ToT1.nii.gz"; else rm -f "$D/mre/MRE_alpha_ToT1.nii.gz"; fi
 
     # DTI arm source (independent single-shell scan under ParkMREDTI_Backup). The DTI folder names drift
     # from the MUDI subject IDs (a _DTI suffix, dropped underscores, or case), so match on a normalised

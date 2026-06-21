@@ -100,9 +100,14 @@ rm -rf "${SIM_DIRS[@]}"
 stage "extract ROI E-field"
 "$SP" "$REPO/analysis/04_extract_roi_efield.py" --montage "$MONTAGE"
 
-stage "MRE to T1 + cross-modal compare"
-bash "$REPO/pipeline/05_register_mre_to_T1.sh"
-MONTAGE="$MONTAGE" "$SP" "$REPO/analysis/05_mre_efield_comparison.py"
+# MRE compare is optional (like the DTI arm): runs only if the stiffness map is present, else skipped.
+if [ -n "${MRE_STIFFNESS:-}" ] && [ -f "$MRE_STIFFNESS" ]; then
+    stage "MRE to T1 + cross-modal compare"
+    bash "$REPO/pipeline/05_register_mre_to_T1.sh"
+    MONTAGE="$MONTAGE" "$SP" "$REPO/analysis/05_mre_efield_comparison.py"
+else
+    stage "MRE to T1 + cross-modal compare (skipped: no stiffness map for $SUBJECT)"
+fi
 
 stage "emit metrics (per-subject QC snapshot)"
 "$SP" "$REPO/analysis/qc_harness.py" --montage "$MONTAGE" --emit-metrics "$RESULTS/metrics.json"
