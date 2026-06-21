@@ -3,14 +3,16 @@
 # CIT168/Pauli, warped to subject space. Reuses the CIT168 atlas cache (2009c->NLin6 affine + pauli_prob)
 # staged under registration/atlas_rois/_atlas_cache/, a cluster/manual artifact not built by an in-repo script.
 #
-# Usage: bash analysis/07_build_tier3_nuclei.sh
+# Usage: PIPELINE_CONFIG=<subject config.sh> bash analysis/07_build_tier3_nuclei.sh
 #
 # These nuclei are smaller than a 2.5 mm dMRI / 3 mm MRE voxel and sit within a few mm of each other,
 # so they are EXPLORATORY and E-field-only: overlap-allowed masks, no MRE cross-corr, NOT headline
 # numbers (an SNc |E| is not a reportable result). Only CIT168 resolves them (FreeSurfer/HarvardOxford cannot).
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/../config/config.sh"
+CFG="${PIPELINE_CONFIG:-$SCRIPT_DIR/../config/config.sh}"
+[ -f "$CFG" ] || { echo "ERROR: config not found: $CFG (set PIPELINE_CONFIG)"; exit 1; }
+source "$CFG"
 export FSLDIR
 export PATH="$SIMNIBS_BIN:$FSLDIR/bin:$PATH"
 export FSLOUTPUTTYPE=NIFTI_GZ
