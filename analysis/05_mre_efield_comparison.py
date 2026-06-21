@@ -87,7 +87,9 @@ def extract_subject(gate):
     for roi, (ang, dr1) in load_tensor_divergence().items():
         if roi in rows:
             rows[roi]["tdiv_angle"] = ang; rows[roi]["tdiv_dR1"] = dr1
-    # E-field per model: median (primary) + p95 (sensitivity) over GM+WM elements in the ROI
+    # E-field per model: median (primary) + p95 (sensitivity) over GM+WM elements in the ROI. The
+    # whole-brain median is captured here so each mesh is read once, not re-read in the WholeBrain block.
+    wb_efield = {}
     for m, path in MESHES.items():
         if not path or not os.path.exists(path):
             continue
@@ -95,6 +97,7 @@ def extract_subject(gate):
         elab = assign_mesh_labels(msh.elements_baricenters().value, labeled, lab_aff)
         gmwm = (msh.elm.tag1 == 1) | (msh.elm.tag1 == 2)
         ef = msh.field["magnE"].value
+        wb_efield[m] = float(np.median(ef[gmwm])) if gmwm.any() else np.nan
         for k, n in names.items():
             sel = (elab == k) & gmwm
             rows[n][m] = float(np.median(ef[sel])) if sel.any() else np.nan
@@ -107,6 +110,28 @@ def extract_subject(gate):
         # orientation dispersion. uFA is an EXPLANATION variable here, NOT a conductivity input.
         if np.isfinite(r.get("uFA", np.nan)) and np.isfinite(r.get("FA_meanD", np.nan)):
             r["uFA_minus_FA"] = r["uFA"] - r["FA_meanD"]
+    # WholeBrain: union of all ROI labels (GM+WM), sampled with the same CSF-excluding gate.
+    wb_lab = np.where(labeled > 0, 1, 0).astype(labeled.dtype)
+    wb_names = {1: "WholeBrain"}
+    wb = {}
+    for nm, p in MRE_MAPS.items():
+        if os.path.exists(p):
+            wb[nm] = sample_volume_medians(p, wb_lab, lab_aff, wb_names, gate=gate).get("WholeBrain", np.nan)
+            wb[nm + "_ung"] = sample_volume_medians(p, wb_lab, lab_aff, wb_names).get("WholeBrain", np.nan)
+    for nm, p in MICRO_MAPS.items():
+        if os.path.exists(p):
+            wb[nm] = sample_volume_medians(p, wb_lab, lab_aff, wb_names).get("WholeBrain", np.nan)
+    if os.path.exists(TENSOR):
+        wb["cond_aniso"] = sample_tensor_aniso_medians(TENSOR, wb_lab, lab_aff, wb_names).get("WholeBrain", np.nan)
+        wb["FA_meanD"] = sample_tensor_fa_medians(TENSOR, wb_lab, lab_aff, wb_names).get("WholeBrain", np.nan)
+    for m in MESHES:
+        if m in wb_efield:
+            wb[m] = wb_efield[m]
+    if np.isfinite(wb.get("E_MDdMRI", np.nan)) and wb.get("E_DTI", 0):
+        wb["dE_model_pct"] = 100 * (wb["E_MDdMRI"] - wb["E_DTI"]) / wb["E_DTI"]
+    if np.isfinite(wb.get("uFA", np.nan)) and np.isfinite(wb.get("FA_meanD", np.nan)):
+        wb["uFA_minus_FA"] = wb["uFA"] - wb["FA_meanD"]
+    rows["WholeBrain"] = wb
     return rows
 
 
