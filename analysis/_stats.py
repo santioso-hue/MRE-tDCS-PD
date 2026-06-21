@@ -39,15 +39,26 @@ def residualize(y, X):
 
 
 def partial_pearson(x, y, covar):
-    """Pearson(x, y) controlling for covar (one or more columns). Returns (r, p)."""
-    if len(x) < 4:
+    """Partial Pearson correlation of x and y controlling for covar (one or more columns). Returns (r, p).
+    The p-value uses the covariate-adjusted t-test t = r*sqrt((n-2-k)/(1-r^2)) on df = n-2-k, where k is the
+    number of covariate columns. (scipy.pearsonr on the residuals would test on df = n-2 and understate p by
+    not paying for the df spent residualizing on the k covariates.)"""
+    x, y = np.asarray(x, float), np.asarray(y, float)
+    cov = np.asarray(covar, float)
+    if cov.ndim == 1:
+        cov = cov.reshape(-1, 1)
+    n, k = len(x), cov.shape[1]
+    if n - 2 - k < 1:
         return np.nan, np.nan
-    rx = residualize(np.asarray(x, float), np.asarray(covar, float))
-    ry = residualize(np.asarray(y, float), np.asarray(covar, float))
+    rx, ry = residualize(x, cov), residualize(y, cov)
     if rx.std() == 0 or ry.std() == 0:
         return np.nan, np.nan
-    r, p = stats.pearsonr(rx, ry)
-    return r, p
+    r = float(np.corrcoef(rx, ry)[0, 1])
+    if abs(r) >= 1:
+        return r, 0.0
+    df = n - 2 - k
+    t = r * np.sqrt(df / (1 - r * r))
+    return r, float(2 * stats.t.sf(abs(t), df))
 
 
 def rank_biserial_paired(a, b):

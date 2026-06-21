@@ -32,6 +32,7 @@ from _stats import bh_fdr, cohens_d, residualize, partial_pearson, rank_biserial
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MODELS = ["ISO", "DTI", "MD-dMRI"]
 WHOLE_BRAIN = "WholeBrain"   # aggregate row; excluded from per-family FDR so it does not inflate m
+TIER3 = {f"{n}_{s}" for n in ("SNc", "SNr", "VTA", "RN", "STN") for s in ("L", "R")}  # exploratory; own FDR family
 MIN_PAIRS = 6                # minimum finite paired observations to run a Wilcoxon test
 
 
@@ -151,15 +152,22 @@ def main():
                              p_h1_dti=h1["DTI"][0], es_h1_dti=h1["DTI"][1],
                              p_h1_iso=h1["ISO"][0], es_h1_iso=h1["ISO"][1],
                              p_h3=p_h3, d_h3=d_h3, r_age=r_age, p_age=p_age))
-        # FDR-BH per (montage, family) across ROIs. WholeBrain is excluded so it does not inflate m
-        # (passed as NaN -> NaN q).
-        def fdr_no_wholebrain(key):
-            ps = [(r[key] if r["roi"] != WHOLE_BRAIN else np.nan) for r in rows]
-            return bh_fdr(ps)
-        q_h1_dti = fdr_no_wholebrain("p_h1_dti")
-        q_h1_iso = fdr_no_wholebrain("p_h1_iso")
-        q_h3 = fdr_no_wholebrain("p_h3")
-        q_age = fdr_no_wholebrain("p_age")
+        # FDR-BH within each family SEPARATELY: the primary Tier 1+2 ROIs, and the exploratory tier-3 nuclei.
+        # WholeBrain is excluded from both. Keeping tier-3 in its own family avoids inflating the primary m.
+        def fdr_family(key):
+            q = np.full(len(rows), np.nan)
+            primary = [i for i, r in enumerate(rows) if r["roi"] not in TIER3 and r["roi"] != WHOLE_BRAIN]
+            exploratory = [i for i, r in enumerate(rows) if r["roi"] in TIER3]
+            for members in (primary, exploratory):
+                if members:
+                    fq = bh_fdr([rows[i][key] for i in members])
+                    for j, i in enumerate(members):
+                        q[i] = fq[j]
+            return q
+        q_h1_dti = fdr_family("p_h1_dti")
+        q_h1_iso = fdr_family("p_h1_iso")
+        q_h3 = fdr_family("p_h3")
+        q_age = fdr_family("p_age")
         for i, r in enumerate(rows):
             r.update(q_h1_dti=q_h1_dti[i], q_h1_iso=q_h1_iso[i], q_h3=q_h3[i], q_age=q_age[i])
 
