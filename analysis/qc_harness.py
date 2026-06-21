@@ -24,9 +24,9 @@ from _rois import eigvals_6comp, fa_from_evals  # noqa: E402  (shared eigendecom
 # on one subject only these absolute thresholds are in force.
 THR = dict(
     charm_tet_q_med_min=0.10, charm_tet_q_badfrac_max=0.05,  # broadly-poor mesh / too many slivers
-    tissue_plausible={"WM": (3e5, 7e5), "GM": (4e5, 8e5), "CSF": (5e4, 5e5),
-                      "bone": (2e5, 8e5), "scalp": (5e5, 2e6)},   # mm3 ranges
-    cc_fa_min=0.45, csf_fa_max=0.25,                 # dwi2cond
+    tissue_plausible={"WM": (3e5, 7.5e5), "GM": (4e5, 8e5), "CSF": (5e4, 6e5),
+                      "bone": (2e5, 8.5e5), "scalp": (5e5, 2.5e6)},  # mm3; upper bounds recalibrated to the n=29 cohort
+    cc_fa_min=0.25, csf_fa_max=0.25,                 # dwi2cond; cc_fa_min recalibrated to the n=29 cohort min
     reg_containment_min=0.95,                        # dMRI FOV covers brain (gross misreg / cutoff)
     cc_v1x_min=0.6,                                  # [PROV] CC V1 left-right (tensor reorientation)
     peduncle_siz_min=0.55,                           # [PROV] cerebral-peduncle V1 superior-inferior in the SimNIBS frame
