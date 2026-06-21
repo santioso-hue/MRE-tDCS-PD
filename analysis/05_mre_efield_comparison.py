@@ -6,7 +6,7 @@ E-field impact (dE_model_pct = 100*(E_MD-dMRI - E_DTI)/E_DTI, a local PERCENT di
 montage field cancels, so it isolates the conductivity model) land where Olsson flags tissue alteration?
 dE_model_pct is NaN until the DTI arm (ParkMRE_DTI) lands.
 
-MRE gating: cohort has no per-voxel confidence map (QC is subject-level GoodMRE+alphapositive), so MRE
+MRE gating: cohort has no per-voxel confidence map (QC was subject-level, not per-voxel), so MRE
 maps are sampled over brain EXCLUDING the CSF-adjacent cortical surface where the Helmholtz inversion is
 unreliable (Olsson); gated is primary, ungated is the sensitivity row. The gate does NOT touch MD/uFA
 (QTI) or the E-field (FEM). E-field statistic is MEDIAN per ROI (Olsson convention); p95 is a sensitivity column.
@@ -137,7 +137,7 @@ def extract_subject(gate):
 
 def main():
     gate, frac = build_gate()
-    print(f"MRE gate: no per-voxel confidence (subject-level GoodMRE+alphapositive QC); CSF-adjacent "
+    print(f"MRE gate: no per-voxel confidence map (cohort QC is subject-level); CSF-adjacent "
           f"cortex excluded -> {100*frac:.1f}% of brain kept")
     rows = extract_subject(gate)
 

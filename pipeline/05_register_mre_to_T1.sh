@@ -64,7 +64,7 @@ if [ "$HAVE_ALPHA" = 1 ]; then
     flirt -in "$MRE_ALPHA" -ref "$T1_REF" -applyxfm -init fs_to_charm.mat -interp trilinear -out mre_alpha_T1.nii.gz
     # alpha (springpot exponent) is physically in (0,1]; the delivered map carries Helmholtz-inversion
     # artifacts outside that range (~ -1.5..1.5). Mask them to 0 (= dropped downstream like masked background),
-    # matching the subject-level "alphapositive" QC, so only valid alpha enters the medians/correlations.
+    # so only valid alpha enters the medians/correlations.
     "$SIMNIBS_BIN/simnibs_python" - <<'PY'
 import nibabel as nib, numpy as np
 im = nib.load("mre_alpha_T1.nii.gz"); a = np.asarray(im.dataobj, np.float64)
