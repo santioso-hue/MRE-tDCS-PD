@@ -15,7 +15,8 @@ Run: simnibs_python analysis/09_mre_cohort_corr.py [--cohort config/cohort.json]
 import os, sys, csv, json, argparse
 import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _stats import partial_pearson, bh_fdr  # noqa: E402
+from _stats import partial_pearson, bh_fdr, cohens_d  # noqa: E402
+from scipy import stats as scst  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EFIELD = ["E_ISO", "E_DTI", "E_MDdMRI", "dE_model_pct"]   # vs stiffness - the deliverable
@@ -87,6 +88,24 @@ def _write(path, rows):
     print(f"  wrote {path}")
 
 
+def softening_context(table, group, age):
+    """Reproduce Olsson's age/PD softening (whole-brain) and trace it through to the E-field. The E-field
+    arm is MD-dMRI (the arms are near-identical, so it is representative)."""
+    wb = table["WholeBrain"]
+    st, ef = wb["stiffness"], wb["E_MDdMRI"]
+    pd, hc, g = group == 1, group == 0, group.reshape(-1, 1)
+    rows = []
+    def add(check, stat, value, p):
+        rows.append(dict(check=check, stat=stat, value=value, p=p))
+    r, p = partial_pearson(age, st, g); add("age_vs_stiffness", "partial_rho", r, p)
+    r, p = partial_pearson(age, ef, g); add("age_vs_E_MDdMRI", "partial_rho", r, p)
+    add("PDvsHC_stiffness", "cohens_d", cohens_d(st[pd], st[hc]), scst.mannwhitneyu(st[pd], st[hc]).pvalue)
+    add("PDvsHC_E_MDdMRI", "cohens_d", cohens_d(ef[pd], ef[hc]), scst.mannwhitneyu(ef[pd], ef[hc]).pvalue)
+    r, p = scst.pearsonr(st[pd], ef[pd]); add("stiffness_vs_E_MDdMRI_PD", "pearson_rho", r, p)
+    r, p = scst.pearsonr(st[hc], ef[hc]); add("stiffness_vs_E_MDdMRI_HC", "pearson_rho", r, p)
+    return rows
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--cohort", default=os.path.join(ROOT, "config", "cohort.json"))
@@ -148,6 +167,12 @@ def main():
     print(f"\nAge robustness: of the {sum(1 for r in wb if r['modality'] in ARMS and np.isfinite(r['q']) and r['q'] < 0.05)} "
           f"arm(s) significant under group control, {len(surv)} stay significant after adding age "
           f"-> {'the association survives age control' if surv else 'the association is explained by age (does not survive age control)'}.")
+
+    ctx = softening_context(table, group, age)
+    _write(os.path.join(args.results, "mre_cohort_corr_context.csv"), ctx)
+    print("\nSoftening context (Olsson reproduction + the chain to the E-field, whole-brain):")
+    for r in ctx:
+        print(f"  {r['check']:26} {r['stat']:11} = {r['value']:+.3f}  p={r['p']:.3g}")
 
     print("\nPer-ROI significant ROIs (group-controlled, q<0.05):")
     for mod in EFIELD:
