@@ -12,7 +12,7 @@ plt.rcParams.update({"font.family": "sans-serif", "font.sans-serif": ["DejaVu Sa
 
 R = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "analysis", "results")
 MONTAGES = ["M1", "DLPFC", "HD_M1", "HD_DLPFC"]
-LAB = {"M1": "M1\n(pad)", "DLPFC": "DLPFC\n(pad)", "HD_M1": "HD-M1\n(4×1)", "HD_DLPFC": "HD-DLPFC\n(4×1)"}
+LAB = {"M1": "M1 pad", "DLPFC": "DLPFC pad", "HD_M1": "M1 HD", "HD_DLPFC": "DLPFC HD"}
 CTX = ["Ctx_Frontal", "Ctx_Parietal", "Ctx_Temporal", "Ctx_Occipital"]
 WM = ["WM_Frontal", "WM_Parietal", "WM_Temporal", "WM_Occipital"]
 ORANGE, BLUE, INK = "#d95f02", "#1f6fb2", "#1a1a1a"
