@@ -30,7 +30,10 @@ for S in "${SUBJECTS[@]}"; do
         echo "SKIP $S (results/$S/metrics.json exists; set REDO=1 to recompute)"; skipped=$((skipped+1)); continue
     fi
     mkdir -p "$D/anat" "$D/dmri" "$D/dti" "$D/mre" "$D/fit" "$D/work"
-    ln -sf "$SHARE/T1T2QSMandSWI/$S/T1.nii.gz"       "$D/anat/T1.nii.gz"
+    # charm T1: the FreeSurfer-conformed 1 mm recon T1. The high-resolution structural is zero-fill
+    # interpolated, so the recon T1 carries the genuine acquisition resolution; it also shares the world
+    # frame of t2_to_t1 (both in recon space), keeping T1 and T2 co-located for charm.
+    ln -sf "$SHARE/ReconAlls/$S/mri/T1.nii.gz"       "$D/anat/T1.nii.gz"
     ln -sf "$SHARE/T1T2QSMandSWI/$S/t2_to_t1.nii.gz" "$D/anat/t2_to_t1.nii.gz"
     for f in linear_corrected spherical_corrected; do
         for e in nii.gz bval bvec; do ln -sf "$SHARE/MUDI_synb0/$S/$f.$e" "$D/dmri/$f.$e"; done
@@ -118,4 +121,3 @@ done
 echo; echo "Cohort done: $ok ok, $fail failed, $skipped skipped (already had metrics.json)."
 echo "DTI arm: $dti_matched matched a ParkMRE_DTI scan, $dti_skipped without one (ran ISO+MD-dMRI only)."
 [ $fail -gt 0 ] && printf 'FAILED: %s\n' "${FAILED[*]:-}"
-echo "Next: simnibs_python analysis/06_cohort_stats.py to aggregate per-ROI E-field across subjects."

@@ -1,9 +1,7 @@
 # analysis/ - from |E| to a reported number
 
-Reading guide for a reviewer: *can I trust that a number in a results table came from this code?*
 This folder turns the SimNIBS sims into the per-ROI numbers and figures. The per-subject pipeline that
-builds the head model and runs the sims is in `pipeline/` (see `docs/cluster_runbook.md` for the full
-charm -> sims chain); this README covers the analysis half.
+builds the head model and runs the sims is in `pipeline/`; this README covers the analysis half.
 
 ## DAG (consumes -> emits)
 
@@ -39,13 +37,12 @@ pipeline/01_dwi2cond (gated)           ->  m2m/DTI_coregT1_tensor.nii.gz    (DTI
 - `qc_harness.py` - per-subject QC across mesh / conductivity / registration / E-field. The p95-range and
   spike checks are SANITY GATES (flag an artifactual sim), not reported numbers. `--emit-metrics` dumps the
   metric snapshot. This is the single validation authority.
-- `qc_figures.py` - figures only: |E| overlay PNGs, the MD-dMRI-minus-DTI difference PNG, and T1-space
-  magnE NIfTIs. No stats of record.
-- `07_build_tier3_nuclei.sh` + `_build_tier3_labels.py` - CIT168 SNc/SNr/VTA/RN/STN masks. EXPLORATORY,
-  E-field-only, overlap-allowed; not headline numbers. Every tier-3 magic number is in `07`'s config block.
-  The CIT168 atlas cache it consumes (`_atlas_cache/`: the 2009c->NLin6 affine + `pauli_prob`) is a
-  cluster/manual artifact staged into `registration/atlas_rois/`, not produced by any in-repo script.
-- `build_rois.py` - recon-all parcellation -> Tier-1/2 ROI masks in mesh space (`registration/freesurfer_rois/`).
+- `07_build_nuclei.sh` + `_build_nuclei_labels.py` - CIT168 Group 2 nuclei masks (Pu Ca NAC GPe GPi SNc
+  SNr VTA RN STN, L/R). EXPLORATORY, E-field-only, overlap-allowed; not headline numbers. Every nuclei
+  magic number is in `07`'s config block. The CIT168 atlas cache it consumes (`_atlas_cache/`: the
+  2009c->NLin6 affine + `pauli_prob`) is a cluster/manual artifact staged into
+  `registration/atlas_rois/nuclei/`, not produced by any in-repo script.
+- `build_rois.py` - recon-all parcellation -> Group 1 cross-comparison ROI masks in mesh space (`registration/freesurfer_rois/`).
 - `_rois.py`, `_sims.py` - shared helpers (ROI loading/sampling; montage-aware mesh lookup). One copy, imported.
 
 ## Unit-tested (the credibility signal)
@@ -55,6 +52,6 @@ tensor-divergence math (`tests/test_tensor_divergence.py`) are unit-tested. Each
 `simnibs_python tests/test_qc_harness.py`.
 
 ## Framing
-The MD-dMRI arm uses a MORE PRINCIPLED tensor (kurtosis-aware multi-shell QTI <D>) than the single-shell
-Gaussian DTI tensor. The analysis QUANTIFIES where the two diverge; it does not assert <D> is "more
-accurate" or "more anisotropic".
+The MD-dMRI model uses a kurtosis-aware multi-shell QTI <D> tensor in place of the single-shell Gaussian DTI
+tensor. The analysis quantifies where the two diverge; it does not assert <D> is "more accurate" or "more
+anisotropic".

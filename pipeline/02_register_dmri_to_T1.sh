@@ -3,7 +3,7 @@
 #
 # Registration is an S0-driven 12-DOF affine (dMRI S0 -> charm T2, same T2-like contrast), applied to
 # every map. Affine, not nonlinear: the dMRI is already Synb0+topup distortion-corrected, and the
-# bake-off (docs/registration_bakeoff/) showed a warp over-warps it ~5 mm without improving alignment.
+# a per-subject registration bake-off showed a warp over-warps it ~5 mm without improving alignment.
 # Maps are carried by type: scalars trilinear, mask nearest-neighbour, v1 + triaxial tensor reoriented
 # with vecreg -t (covariant reorientation for an affine).
 #
@@ -42,7 +42,6 @@ done
 mkdir -p "$REG_DIR"
 cd "$REG_DIR"
 
-echo "Step 1: reconstruct <D>, eigenvalues, v1, S0, QA maps from the QTI fit (dMRI space)"
 # prepare_dmri_tensor needs a 3D image on the fit grid for the output affine/header. run_qti_cov_cohort
 # writes a stable dmri_grid_ref.nii.gz for exactly this; fall back to the fit auto-mask for older fits.
 QDIR="$(dirname "$QTI_MFS")"
@@ -54,8 +53,7 @@ export DMRI_REF
 [ -f "$DMRI_REF" ] || { echo "ERROR: dMRI grid reference not found: $DMRI_REF"; exit 1; }
 "$SIMNIBS_BIN/simnibs_python" "$SCRIPT_DIR/prepare_dmri_tensor.py"
 
-echo ""
-echo "Step 2: brain-extract the charm T2 (registration target, matches S0 contrast)"
+# Brain-extract the charm T2 (registration target, matches S0 contrast).
 T2_BRAIN="T2_brain.nii.gz"
 "$SIMNIBS_BIN/simnibs_python" - "$M2M_DIR" "$T2_BRAIN" <<'PY'
 import sys, os, numpy as np, nibabel as nib
@@ -68,8 +66,7 @@ nib.save(nib.Nifti1Image((t2.get_fdata() * brain).astype(np.float32), t2.affine,
 PY
 require_nonzero "$T2_BRAIN"
 
-echo ""
-echo "Step 3: S0-driven dMRI S0 -> charm T2 (Mattes MI): rigid pre-align, then 12-DOF affine"
+# S0-driven dMRI S0 -> charm T2 (MI): rigid pre-align, then 12-DOF affine.
 # Rigid first (cannot scale-collapse) to seed the affine: a bare 12-DOF MI affine can diverge to a
 # degenerate ~20x scale-collapse on some subjects, sending the dMRI outside the brain.
 flirt -in s0_dMRI.nii.gz -ref "$T2_BRAIN" -omat dMRI_to_T1_rigid.mat -dof 6 -cost mutualinfo \
@@ -86,29 +83,37 @@ print(f"  dMRI->T1 affine |det| = {d:.4f}")
 sys.exit(0 if 0.3 < d < 3.0 else 1)
 PY
 
-echo ""
-echo "Step 4: carry every map to T1 with that one affine"
-# Scalars (trilinear): eigenvalues for the conductivity tensor, plus QA/QC maps. Eigenvalues are warped
-# as scalars so the anisotropy magnitude is preserved (whole-tensor interpolation would dilute it); the
-# orientation is carried separately by vecreg below.
-for s in FA lam1 lam2 lam3 MD uFA s0; do
+# Conductivity-tensor output grid. Default is the charm T1 grid (unchanged behaviour). Set
+# TENSOR_GRID_RES in config.sh to an isotropic mm value to resample the conductivity-relevant maps onto
+# a coarser T1-aligned grid, e.g. 2.5 for the MD-dMRI acquisition resolution. SimNIBS samples the tensor
+# onto mesh elements via its affine, so the tensor grid is independent of the FEM mesh, and resampling D
+# beyond its measured resolution adds no information.
+TGRID_REF="$T1_REF"
+if [ -n "${TENSOR_GRID_RES:-}" ]; then
+    TGRID_REF="tensor_grid_ref.nii.gz"
+    flirt -in "$T1_REF" -ref "$T1_REF" -applyisoxfm "$TENSOR_GRID_RES" -interp spline -out "$TGRID_REF"
+    require_nonzero "$TGRID_REF"
+fi
+
+# QC and analysis scalars stay on the T1 grid (visual coregistration check, MRE comparison).
+for s in FA MD uFA s0; do
     flirt -in "${s}_dMRI.nii.gz" -ref "$T1_REF" -applyxfm -init dMRI_to_T1_aff.mat \
           -interp trilinear -out "${s}_T1.nii.gz"
 done
 flirt -in dMRI_mask.nii.gz -ref "$T1_REF" -applyxfm -init dMRI_to_T1_aff.mat \
       -interp nearestneighbour -out dMRI_mask_T1.nii.gz
-# Direction data: vecreg -t applies the affine's rotation to the vectors/tensor (covariant reorientation).
-vecreg -i v1_dMRI.nii.gz             -o v1_T1.nii.gz             -r "$T1_REF" -t dMRI_to_T1_aff.mat
-vecreg -i tensor_triaxial_dMRI.nii.gz -o tensor_triaxial_T1.nii.gz -r "$T1_REF" -t dMRI_to_T1_aff.mat
+
+# Conductivity inputs land on the tensor grid. Eigenvalues warp as independent scalar maps so the
+# anisotropy magnitude is preserved; the orientation frame and principal axis reorient with vecreg.
+for s in lam1 lam2 lam3; do
+    flirt -in "${s}_dMRI.nii.gz" -ref "$TGRID_REF" -applyxfm -init dMRI_to_T1_aff.mat \
+          -interp trilinear -out "${s}_T1.nii.gz"
+done
+vecreg -i v1_dMRI.nii.gz              -o v1_T1.nii.gz              -r "$TGRID_REF" -t dMRI_to_T1_aff.mat
+vecreg -i tensor_triaxial_dMRI.nii.gz -o tensor_triaxial_T1.nii.gz -r "$TGRID_REF" -t dMRI_to_T1_aff.mat
 
 for out in FA_T1 lam1_T1 lam2_T1 lam3_T1 MD_T1 uFA_T1 s0_T1 dMRI_mask_T1 v1_T1 tensor_triaxial_T1; do
     require_nonzero "${out}.nii.gz"
 done
 
-echo ""
-echo "Done. Outputs in $REG_DIR:"
-echo "  lam1/lam2/lam3_T1.nii.gz   mean-tensor eigenvalues (um2/ms, scalar)"
-echo "  tensor_triaxial_T1.nii.gz  reoriented <D> frame (in-plane v2,v3 source)"
-echo "  v1_T1.nii.gz               principal eigenvector (vecreg)"
-echo "  MD_T1, uFA_T1.nii.gz       QA / post-hoc MRE-comparison maps"
-echo "  s0_T1, FA_T1.nii.gz        registration QC - VISUALLY CHECK over T1 before trusting"
+echo "Done. T1-space maps in $REG_DIR. QC: visually check s0_T1/FA_T1 over T1 before trusting the registration."

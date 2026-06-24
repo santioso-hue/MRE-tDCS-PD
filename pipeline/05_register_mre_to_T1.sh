@@ -47,20 +47,18 @@ HAVE_ALPHA=0
 if [ -n "${MRE_ALPHA:-}" ] && [ -f "$MRE_ALPHA" ]; then HAVE_ALPHA=1; else echo "note: MRE alpha map absent -> registering stiffness only"; fi
 mkdir -p "$REG_DIR"; cd "$REG_DIR"
 
-echo "FS-conformed T1 -> charm T1 affine (orig.mgz, 6-DOF MI; same transform build_rois uses)"
+# FS-conformed T1 -> charm T1 affine (orig.mgz, 6-DOF MI; same transform build_rois uses).
 "$SIMNIBS_BIN/simnibs_python" -c "import nibabel as nib; nib.save(nib.load('$ORIG'), 'orig_fs.nii.gz')"
 flirt -in orig_fs.nii.gz -ref "$T1_REF" -omat fs_to_charm.mat -dof 6 -cost mutualinfo \
       -searchrx -20 20 -searchry -20 20 -searchrz -20 20 -interp trilinear   # match build_rois' orig->charm
 [ -s fs_to_charm.mat ] || { echo "ERROR: orig->charm flirt failed"; exit 1; }
 
 assert_conformed_grid "$MRE_STIFFNESS" orig_fs.nii.gz
-echo "resample MRE stiffness into charm T1"
 flirt -in "$MRE_STIFFNESS" -ref "$T1_REF" -applyxfm -init fs_to_charm.mat -interp trilinear -out mre_stiffness_T1.nii.gz
 require_nonzero mre_stiffness_T1.nii.gz
 
 if [ "$HAVE_ALPHA" = 1 ]; then
     assert_conformed_grid "$MRE_ALPHA" orig_fs.nii.gz
-    echo "resample MRE alpha into charm T1"
     flirt -in "$MRE_ALPHA" -ref "$T1_REF" -applyxfm -init fs_to_charm.mat -interp trilinear -out mre_alpha_T1.nii.gz
     # alpha (springpot exponent) is physically in (0,1]; the delivered map carries Helmholtz-inversion
     # artifacts outside that range (~ -1.5..1.5). Mask them to 0 (= dropped downstream like masked background),
@@ -79,4 +77,4 @@ else
 fi
 rm -f orig_fs.nii.gz
 
-echo "Done -> registration/mre_stiffness_T1.nii.gz (+ mre_alpha_T1.nii.gz when present). Next: simnibs_python analysis/05_mre_efield_comparison.py"
+echo "Done -> registration/mre_stiffness_T1.nii.gz (+ mre_alpha_T1.nii.gz when present)."

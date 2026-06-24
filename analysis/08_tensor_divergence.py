@@ -1,17 +1,11 @@
 """08_tensor_divergence.py - per-ROI divergence between the single-shell DTI tensor and the QTI <D>
-tensor, computed BEFORE any E-field claim.
+tensor.
 
-The contribution is a MORE PRINCIPLED tensor construction (kurtosis-aware multi-shell <D> vs single-shell
-Gaussian DTI). This script QUANTIFIES where the two estimates diverge; it does NOT assert <D> is more
-accurate or more anisotropic. The novelty is only non-trivial if the tensors actually diverge in a
-structured way -- if they are near-identical, "more principled" collapses to "fancier acquisition, no
-effect", so we measure the divergence directly.
-
-'vn' divides each tensor by det^(1/3), so MAGNITUDE cancels and only the eigenvalue RATIOS (lam1/lam3,
-lam2/lam3) and the orientation reach the E-field. Hence we report orientation angle, FA difference, and
-the ratio differences -- the divergence that can actually change |E|, not a magnitude difference 'vn' discards.
-The equal/diverge verdict is MEDIAN-only on angle + the two ratios; dFA and the IQRs are reported as
-explanatory readouts and do not enter the verdict.
+Quantifies where the two tensor estimates (kurtosis-aware multi-shell <D> vs single-shell Gaussian DTI)
+diverge. 'vn' divides each tensor by det^(1/3), so magnitude cancels and only the eigenvalue ratios
+(lam1/lam3, lam2/lam3) and orientation reach the E-field; we therefore report orientation angle, FA
+difference, and the two ratio differences. The equal/diverge verdict is MEDIAN-only on angle + the two
+ratios; dFA and the IQRs are explanatory readouts and do not enter the verdict.
 
 Inputs (both 6-comp FSL order xx,xy,xz,yy,yz,zz, in T1/mesh space):
   DTI:  m2m/DTI_coregT1_tensor.nii.gz   (dwi2cond)   [gated on ParkMRE_DTI for the cohort]
@@ -31,28 +25,24 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "pipeline"))
 from _config import cfg  # noqa: E402
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _rois import load_labeled, _labels_on_grid, eigh_6comp, fa_from_evals, v1_angle_deg  # noqa: E402
+from _rois import load_labeled, _labels_on_grid, eigh_6comp, fa_from_evals, v1_angle_deg, PD_EPS, FILL_EPS  # noqa: E402
 
-# ANGLE_FLOOR_DEG = registration/reorientation noise floor for the V1 angle, empirically grounded (not the
-# old circular "cross-method median"). A matched-registration test (2026-06-18, two held-out subjects) moved the
-# DTI-vs-<D> V1 angle <2 deg when DTI was registered FA->T1 (dwi2cond) vs b0->T2 (matched to <D>), and standard
-# dwi2cond matched a hand-rolled affine to ~1 deg; reorientation adds a few deg, so ~8 deg is a conservative
-# floor. The OBSERVED core-WM divergence is ~13-28 deg (well above it), so 'diverge' is robust to this value;
-# the verdict is DESCRIPTIVE -- the per-ROI angle/ratios are the reported quantities.
+# ANGLE_FLOOR_DEG = a conservative reporting floor for the V1 angle (registration/reorientation noise). The
+# verdict is DESCRIPTIVE: the per-ROI angle and eigenvalue-ratio differences are the reported quantities.
+# 'vn' discards tensor magnitude, so only tensor shape (anisotropy ratios + orientation) reaches |E|;
+# registration sensitivity of the orientation readout is assessed separately and reported with the results.
 ANGLE_FLOOR_DEG = 8.0
 RATIO_TOL = 0.10            # chosen fractional tolerance on lam1/lam3 and lam2/lam3 for the "equal" verdict
 ANISO_FLOOR = 1.2          # below this DTI lam1/lam3 the ROI is ~isotropic: the ratio test is unstable and
                            # barely moves 'vn' |E|, so the verdict falls back to orientation-only there
                            # (keeps RATIO_TOL from imposing a stricter absolute bar in near-isotropic GM).
-PD_EPS = 1e-3              # positive-definite floor on the smallest eigenvalue, in um2/ms. Numeric anchor:
-                           # 03's EPS=1e-3 reconstruction floor (qc_harness._vn_check shares the >0 intent,
-                           # not the value). BOTH tensors must be in um2/ms before this gate is applied.
-FILL_EPS = 1e-6           # |Dxx| reject for empty/background voxels (distinct from the PD floor)
+# PD_EPS / FILL_EPS imported from _rois (one source of truth). PD_EPS is a um2/ms floor, so BOTH tensors
+# must be converted to um2/ms (DTI_TO_UM2MS below) before the positive-definite gate is applied.
 
 DTI = os.path.join(cfg["M2M_DIR"], "DTI_coregT1_tensor.nii.gz")
 DD = os.path.join(cfg["WORK_DIR"], "tensor_MD_dMRI.nii.gz")
 # FSL dtifit emits the DTI tensor in mm2/s; the QTI <D> (03 output) is in um2/ms (1 um2/ms = 1e-3 mm2/s).
-# Convert DTI to um2/ms once at load so the PD_EPS=1e-3 floor is unit-correct for BOTH arms. angle / FA /
+# Convert DTI to um2/ms once at load so the PD_EPS=1e-3 floor is unit-correct for BOTH models. angle / FA /
 # eigenvalue ratios are scale-invariant, so this rescale only affects the positive-definite gate.
 DTI_TO_UM2MS = 1000.0
 
@@ -63,7 +53,7 @@ def _miqr(x):
 
 def main():
     if not os.path.exists(DTI):
-        sys.exit(f"DTI tensor not found: {DTI}\n(the DTI arm is gated on ParkMRE_DTI; run 01_dwi2cond first)")
+        sys.exit(f"DTI tensor not found: {DTI}\n(the DTI model is gated on ParkMRE_DTI; run 01_dwi2cond first)")
     if not os.path.exists(DD):
         sys.exit(f"<D> tensor not found: {DD}\n(run 03_build_conductivity_tensor.py first)")
 
@@ -80,15 +70,22 @@ def main():
     print(f"unit check (median MD, um2/ms): DTI={np.median(mdt[bt]):.3f}  <D>={np.median(mdd[bd]):.3f}")
 
     rows = []
+    skipped = []   # (ROI name, reason) for every ROI that produced no row; asserted empty below
     for k, n in names.items():
         sel = ((lab == k) & np.isfinite(tdti[..., 0]) & np.isfinite(tdd[..., 0])
                & (np.abs(tdti[..., 0]) > FILL_EPS) & (np.abs(tdd[..., 0]) > FILL_EPS))
         if not sel.any():
+            reason = "no finite non-fill voxels overlapping the labels (DTI or <D>)"
+            print(f"WARN: ROI '{n}' skipped: {reason}", file=sys.stderr)
+            skipped.append((n, reason))
             continue
         ev_d, vec_d = eigh_6comp(tdd, sel)
         ev_t, vec_t = eigh_6comp(tdti, sel)
         pd = (ev_d[:, 0] > PD_EPS) & (ev_t[:, 0] > PD_EPS)   # both positive-definite
         if not pd.any():
+            reason = "no voxels positive-definite in both DTI and <D>"
+            print(f"WARN: ROI '{n}' skipped: {reason}", file=sys.stderr)
+            skipped.append((n, reason))
             continue
         ev_d, vec_d, ev_t, vec_t = ev_d[pd], vec_d[pd], ev_t[pd], vec_t[pd]
 
@@ -112,6 +109,15 @@ def main():
 
     rows.sort(key=lambda r: r["angle_med"], reverse=True)    # most divergent (WM) at the top
 
+    # Fail loudly rather than write a TRUNCATED per-subject file: the cohort aggregate needs a consistent
+    # n, so every ROI in the loaded label set must yield a row. A short file silently poisons the aggregate.
+    expected = len(names)
+    if len(rows) != expected:
+        miss = "; ".join(f"{nm} ({why})" for nm, why in skipped)
+        sys.exit(f"tensor_divergence: emitted {len(rows)}/{expected} ROI rows; "
+                 f"{expected - len(rows)} skipped: {miss}\n"
+                 "Refusing to write a truncated per-subject CSV (would corrupt the cohort aggregate).")
+
     out = os.path.join(ROOT, "analysis", "results", cfg["SUBJECT"], "tensor_divergence.csv")
     os.makedirs(os.path.dirname(out), exist_ok=True)
     cols = ["ROI", "n_vox", "angle_med", "angle_iqr", "dFA_med", "dFA_iqr",
@@ -127,8 +133,6 @@ def main():
     for r in rows:
         a = f"{r['angle_med']:.1f}/{r['angle_iqr']:.1f}"
         print(f"{r['ROI']:22s}{a:>20s}{r['dFA_med']:>8.3f}{r['dR1_med']:>10.2f}{r['verdict']:>10s}")
-    print("\nMORE PRINCIPLED tensor (kurtosis-aware multi-shell <D> vs single-shell DTI): this QUANTIFIES")
-    print("divergence, it does not assert <D> is correct. Single subject -> across-ROI pattern, not a statistic.")
 
 
 if __name__ == "__main__":

@@ -20,7 +20,7 @@ from scipy import stats as scst  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EFIELD = ["E_ISO", "E_DTI", "E_MDdMRI", "dE_model_pct"]   # vs stiffness - the deliverable
-ARMS = ["E_ISO", "E_DTI", "E_MDdMRI"]                      # the three E-field arms (for the cross-arm check)
+ARMS = ["E_ISO", "E_DTI", "E_MDdMRI"]                      # the three E-field models (for the cross-model check)
 OLSSON_MD = -0.76                                          # Olsson Fig 6a, MD vs stiffness |G*| (input check)
 
 
@@ -33,7 +33,7 @@ def fnum(x):
 
 def load(cohort_path, results_dir):
     """Return kept subjects and table[level][modality] -> array aligned to subjects. A subject missing its
-    CSV is dropped with a warning; only manifest subjects are read, so extras (e.g. FullPD5) are ignored."""
+    CSV is dropped with a warning; only manifest subjects are read, so extras are ignored."""
     subs = json.load(open(cohort_path))["subjects"]
     kept, per = [], {}
     for s in subs:
@@ -90,10 +90,16 @@ def _write(path, rows):
 
 def softening_context(table, group, age):
     """Reproduce Olsson's age/PD softening (whole-brain) and trace it through to the E-field. The E-field
-    arm is MD-dMRI (the arms are near-identical, so it is representative)."""
+    model is MD-dMRI (the models are near-identical, so it is representative)."""
     wb = table["WholeBrain"]
     st, ef = wb["stiffness"], wb["E_MDdMRI"]
-    pd, hc, g = group == 1, group == 0, group.reshape(-1, 1)
+    # joint finite mask: age/stiffness/E may be missing for a subject, and partial_pearson / pearsonr /
+    # mannwhitneyu all return NaN on a single non-finite input, which would silently null this whole
+    # reported table. Subset all arrays first (same discipline as corr_vs_stiffness).
+    age = np.asarray(age, float)
+    fin = np.isfinite(st) & np.isfinite(ef) & np.isfinite(age) & np.isfinite(group)
+    st, ef, age, grp = st[fin], ef[fin], age[fin], group[fin]
+    pd, hc, g = grp == 1, grp == 0, grp.reshape(-1, 1)
     rows = []
     def add(check, stat, value, p):
         rows.append(dict(check=check, stat=stat, value=value, p=p))
@@ -135,7 +141,7 @@ def main():
         a = wb_age[r["modality"]]
         r["rho_age"] = a["rho"]; r["q_age"] = a["q"]
 
-    # Per-ROI E-field vs stiffness (group-only, FDR within each arm across ROIs).
+    # Per-ROI E-field vs stiffness (group-only, FDR within each model across ROIs).
     rois = [l for l in table if l != "WholeBrain"]
     perroi, sig_by_mod = [], {}
     for mod in EFIELD:
@@ -152,20 +158,20 @@ def main():
     for r in wb:
         print(f"  {r['pair']:26} {r['rho']:+7.3f} {r['q']:9.3g}   {r['rho_age']:+9.3f} {r['q_age']:9.3g}")
 
-    # Cross-arm check: if ISO ~ DTI ~ MD-dMRI, the association is not conductivity-model driven.
+    # Cross-model check: if ISO ~ DTI ~ MD-dMRI, the association is not conductivity-model driven.
     arm_rho = [r["rho"] for r in wb if r["modality"] in ARMS]
     de = next(r for r in wb if r["modality"] == "dE_model_pct")
-    print(f"\nCross-arm: E-field vs stiffness spans {min(arm_rho):+.3f} to {max(arm_rho):+.3f} across ISO/DTI/MD-dMRI "
+    print(f"\nCross-model: E-field vs stiffness spans {min(arm_rho):+.3f} to {max(arm_rho):+.3f} across ISO/DTI/MD-dMRI "
           f"(spread {max(arm_rho)-min(arm_rho):.3f}).")
-    print(f"  -> {'nearly identical across arms; the association is global, not conductivity-model driven' if max(arm_rho)-min(arm_rho) < 0.1 else 'arms differ; conductivity model may contribute'}.")
+    print(f"  -> {'nearly identical across models; the association is global, not conductivity-model driven' if max(arm_rho)-min(arm_rho) < 0.1 else 'models differ; conductivity model may contribute'}.")
     print(f"  Model-specific dE_model vs stiffness: rho={de['rho']:+.3f}, q={de['q']:.3g} "
           f"({'significant' if np.isfinite(de['q']) and de['q'] < 0.05 else 'n.s.'}).")
 
-    # Age robustness of the arms.
+    # Age robustness of the models.
     surv = [r["modality"] for r in wb if r["modality"] in ARMS
             and np.isfinite(r["q"]) and r["q"] < 0.05 and np.isfinite(r["q_age"]) and r["q_age"] < 0.05]
     print(f"\nAge robustness: of the {sum(1 for r in wb if r['modality'] in ARMS and np.isfinite(r['q']) and r['q'] < 0.05)} "
-          f"arm(s) significant under group control, {len(surv)} stay significant after adding age "
+          f"model(s) significant under group control, {len(surv)} stay significant after adding age "
           f"-> {'the association survives age control' if surv else 'the association is explained by age (does not survive age control)'}.")
 
     ctx = softening_context(table, group, age)

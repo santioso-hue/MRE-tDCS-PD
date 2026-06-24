@@ -1,20 +1,18 @@
 #!/bin/bash
 # 01_dwi2cond.sh -- DTI baseline conductivity tensor via standard SimNIBS dwi2cond.
 #
-# The DTI arm is the SEPARATE single-shell DTI scan (not the MUDI multi-shell). It is already
+# The DTI model is the SEPARATE single-shell DTI scan (not the MUDI multi-shell). It is already
 # eddy/topup-corrected upstream, so we do NOT re-run dwi2cond's preprocessing; we fit the tensor with FSL
-# dtifit (--save_tensor) and hand the fitted tensor to dwi2cond for its validated T1 coregistration +
-# reorientation (the standard SimNIBS path, no reimplementation):
+# dtifit (--save_tensor) and hand the fitted tensor to dwi2cond for its T1 coregistration + reorientation
+# (the standard SimNIBS path, no reimplementation):
 #   dtifit --save_tensor   ->   dwi2cond --all --regmthd=12dof <subjectID> <DTI_tensor>
 #
-# Why this path (validated 2026-06-18 on two held-out subjects, one HC + one PD):
-#  * dwi2cond --help: a preprocessed dtifit --save_tensor tensor is accepted and only coregistered to T1,
-#    so the eddy/distortion steps our data does not need are skipped.
+# Why this path:
+#  * dwi2cond accepts a preprocessed dtifit --save_tensor tensor and only coregisters it to T1, so the
+#    eddy/distortion steps this data does not need are skipped.
 #  * --regmthd=12dof (affine). NOT the nonlinear default (fnirt over-warps the corrected data) and NOT the
 #    old `-r 12dof` (wrong flag for this dwi2cond build).
-#  * Registration driver does not matter for DTI (bake-off FA->T1 vs b0->T2 moved orientation <2 deg; standard
-#    dwi2cond matched a hand-rolled affine ~1 deg), so dwi2cond's own FA->T1 coregistration is used as-is.
-#  * The fitted tensor was cross-checked vs MRtrix DWI2Tensor (FA r=0.997, V1 1.6 deg WM).
+#  * dwi2cond's own FA->T1 coregistration is used as-is (registration driver is not sensitive for DTI).
 #
 # Config inputs (see config.example.sh): DTI_DWI (eddy-corrected single-shell DTI DWI), DTI_BVEC (eddy-rotated
 # bvecs). Optional: DTI_BVAL (real bvals; used only when its token count matches the DWI, else single-shell
@@ -68,11 +66,9 @@ PY
 fi
 MASKOPT=""; [ -n "${DTI_MASK:-}" ] && MASKOPT="-m ${DTI_MASK}"
 
-echo "Step 1: FSL dtifit (--save_tensor) on the corrected DTI"
 # shellcheck disable=SC2086
 dtifit -k "$DTI_DWI" -o "$FITDIR/dti" $MASKOPT -r "$DTI_BVEC" -b "$BVAL" --save_tensor
 
-echo "Step 2: dwi2cond T1 coregistration of the fitted tensor (standard SimNIBS reorientation)"
 cd "$WORK_DIR"; rm -rf "$M2M/dMRI_prep"
 dwi2cond --all --regmthd=12dof "$SUBJECT" "$FITDIR/dti_tensor.nii.gz"
 [ -f "$TENSOR_OUT" ] && echo "Done: $TENSOR_OUT (SimNIBS reads this for anisotropy_type='vn')" \

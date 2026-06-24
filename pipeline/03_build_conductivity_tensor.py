@@ -1,27 +1,21 @@
-"""
-03_build_conductivity_tensor.py - build THE MD-dMRI conductivity tensor (σ ∝ ⟨D⟩).
+"""Build the MD-dMRI conductivity tensor (σ ∝ ⟨D⟩) -> tensor_MD_dMRI.nii.gz.
 
-Usage: simnibs_python pipeline/03_build_conductivity_tensor.py  ->  tensor_MD_dMRI.nii.gz
+Usage: simnibs_python pipeline/03_build_conductivity_tensor.py
 
-The MD-dMRI model is the QTI mean diffusion tensor ⟨D⟩ (first cumulant of the intra-voxel
-diffusion-tensor distribution) mapped to conductivity by the standard SimNIBS 'vn' rule. Downstream
-physics is identical to dwi2cond's DTI model; only the input tensor differs (QTI ⟨D⟩ vs single-shell
-DTI), so ISO/DTI/MD-dMRI is a controlled comparison isolating input-tensor estimation. Rejected
-alternatives (FWE: ~0% field effect under 'vn', ill-posed at this volume count; magnitude
-preservation: ~46%-CoV partial-volume noise; μFA/covariance: microscopic, no macroscopic eigenframe)
-in conductivity_models_derivation.md.
+The MD-dMRI model maps the QTI mean diffusion tensor ⟨D⟩ to conductivity by the standard SimNIBS 'vn'
+rule. Downstream physics is identical to dwi2cond's DTI model; only the input tensor differs (QTI ⟨D⟩
+vs single-shell DTI). Rejected alternatives (FWE, magnitude preservation, μFA/covariance) are in the
+manuscript Methods.
 
-Registering a diffusion tensor must REORIENT it, not just resample the components. Eigenvalues
-λ1≥λ2≥λ3 are interpolated independently as three scalar maps (FLIRT trilinear); the orientation
-frame is carried by vecreg (PPD-style reorientation, Alexander 2001), principal axis anchored to
-v1_T1 (= dps.u). Component-wise trilinear interpolation of the whole 6-vector would average
-neighbouring tensors and shrink anisotropy (the "swelling" PPD avoids). After interpolation the
-scalar maps are re-sorted to λ1≥λ2≥λ3 and re-paired with the frame by magnitude order, λ1 anchored
-to v1_T1, so a boundary voxel where the maps cross cannot mis-assign. Reconstruct in T1 space:
-D = Σ_k λk_T1 · v_k v_kᵀ.
+Reconstruct in T1 space D = Σ_k λk · v_k v_kᵀ from the separately-warped eigenvalues and frame:
+eigenvalues λ1≥λ2≥λ3 are interpolated independently as scalar maps (02, FLIRT trilinear), the
+orientation frame is carried by vecreg (PPD reorientation, Alexander 2001) with the principal axis
+anchored to v1_T1 (= dps.u). Component-wise trilinear interpolation of the whole 6-vector would
+average neighbouring tensors and shrink anisotropy (the "swelling" PPD avoids). After interpolation
+the scalar maps are re-sorted to λ1≥λ2≥λ3 and re-paired with the frame by magnitude order, so a
+boundary voxel where the maps cross cannot mis-assign.
 
-σ ∝ D: Tuch 2001 effective medium (shared eigenvectors; σ-anisotropy = D-anisotropy) + Güllmar 2010
-/ Rullmann 2009 volume normalization (SimNIBS 'vn'). Fully triaxial (λ2≠λ3 in ~93%).
+σ ∝ D: Tuch 2001 effective medium + Güllmar 2010 / Rullmann 2009 volume normalization (SimNIBS 'vn').
 """
 import os
 import sys
@@ -30,6 +24,7 @@ from _config import cfg  # noqa: E402  (paths/subject from config/config.sh)
 
 import numpy as np
 import nibabel as nib
+import nibabel.processing as nibproc
 
 WDIR = cfg["WORK_DIR"]
 RDIR = cfg["REG_DIR"]   # the T1-space maps written by 02_register_dmri_to_T1.sh
@@ -48,8 +43,15 @@ timg = nib.load(os.path.join(RDIR, frame_name))
 t = timg.get_fdata().astype(np.float64)
 affine = timg.affine
 
-seg = nib.load(os.path.join(M2M, "final_tissues.nii.gz")).get_fdata()
-brain = (seg[..., 0] if seg.ndim == 4 else seg) > 0
+# The conductivity maps may be on a coarser grid than the charm segmentation (TENSOR_GRID_RES).
+# Resample the (3D) brain segmentation onto the eigenvalue grid by nearest neighbour so masks align.
+lam1_img = nib.load(os.path.join(RDIR, lam_fmt.format(1) + ".nii.gz"))
+seg_src = nib.load(os.path.join(M2M, "final_tissues.nii.gz"))
+seg_data = seg_src.get_fdata()
+seg_img = nib.Nifti1Image((seg_data[..., 0] if seg_data.ndim == 4 else seg_data), seg_src.affine)
+if seg_img.shape[:3] != lam1_img.shape[:3] or not np.allclose(seg_img.affine, lam1_img.affine, atol=1e-3):
+    seg_img = nibproc.resample_from_to(seg_img, (lam1_img.shape[:3], lam1_img.affine), order=0)
+brain = seg_img.get_fdata() > 0
 covered = brain & (lam1 > EPS)   # only reconstruct where dMRI actually covers (eigenvalues present)
 print(f"  brain: {brain.sum():,}   dMRI-covered: {covered.sum():,} ({100*covered.sum()/brain.sum():.1f}%)")
 
@@ -72,10 +74,9 @@ l3 = np.maximum(lam3[covered][finite], EPS)
 ls = np.sort(np.stack([l1, l2, l3], 1), axis=1)  # enforce ordering after independent scalar interp
 l3, l2, l1 = ls[:, 0], ls[:, 1], ls[:, 2]
 
-# Anchor principal axis to the validated v1_T1
-# The tensor-vecreg principal axis disagrees with the vector-vecreg v1_T1 by ~8° median (two
-# independent interpolations of dps.u). v1_T1 is the reference (agrees with dwi2cond DTI V1 to ~22°
-# median in core WM); use it as v1, keep the in-plane shape from the tensor frame, set λ1→v1_T1.
+# Anchor the principal axis to v1_T1 (the vecreg-reoriented dps.u). The tensor-vecreg principal axis
+# and v1_T1 are two independent interpolations of dps.u and can disagree; v1_T1 is the reference frame.
+# Use it as v1, keep the in-plane shape from the tensor frame, set λ1->v1_T1.
 v1ref_all = nib.load(os.path.join(RDIR, "v1_T1.nii.gz")).get_fdata()
 v1a = v1ref_all[idx[:, 0], idx[:, 1], idx[:, 2]]
 nrm = np.linalg.norm(v1a, axis=1)
@@ -126,4 +127,3 @@ out_path = os.path.join(WDIR, out_name)
 hdr = timg.header.copy(); hdr.set_data_shape(out.shape); hdr.set_data_dtype(np.float32)
 nib.save(nib.Nifti1Image(out, affine, hdr), out_path)
 print(f"\nSaved: {out_path}")
-print("Next: run 04_run_simulations.py (SimNIBS anisotropy_type='vn').")

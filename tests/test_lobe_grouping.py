@@ -26,7 +26,7 @@ ap = np.zeros(sh, int); wm = np.zeros(sh, int); bs = np.zeros(sh, int)
 ap[0, 0, 0] = 1000 + 3      # lh caudalmiddlefrontal  -> Ctx_Frontal
 ap[0, 0, 1] = 2000 + 8      # rh inferiorparietal     -> Ctx_Parietal
 ap[0, 1, 0] = 251           # corpus callosum
-ap[0, 1, 1] = 10            # left thalamus
+ap[0, 1, 1] = 10            # left thalamus (aseg) - must NOT be built; subcortical is Group 2 (CIT168 via 07)
 wm[1, 0, 0] = 3000 + 3      # lh frontal WM           -> WM_Frontal
 wm[1, 0, 1] = 4000 + 5      # rh cuneus WM            -> WM_Occipital
 bs[2, 0, 0] = 173           # midbrain                -> Mesencephalon
@@ -36,7 +36,7 @@ lab, names = assemble_labels(ap, wm, bs)
 ck("Ctx_Frontal", lab[0, 0, 0] == LOBE_ID["Frontal"])
 ck("Ctx_Parietal", lab[0, 0, 1] == LOBE_ID["Parietal"])
 ck("CC", lab[0, 1, 0] == CC_ID)
-ck("Thalamus_L (aseg 10 -> 41)", lab[0, 1, 1] == 41)
+ck("aseg subcortical dropped (label 10 -> unlabeled)", lab[0, 1, 1] == 0 and "Thalamus_L" not in names.values())
 ck("WM_Frontal from wmparc", lab[1, 0, 0] == LOBE_ID["Frontal"] + WM_OFFSET)
 ck("WM_Occipital from wmparc", lab[1, 0, 1] == LOBE_ID["Occipital"] + WM_OFFSET)
 ck("Mesencephalon separate (173)", lab[2, 0, 0] == 55 and names[55] == "Mesencephalon")

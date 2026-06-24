@@ -5,7 +5,8 @@ Usage: ~/Applications/SimNIBS-4.6/bin/simnibs_python analysis/04_extract_roi_efi
 Output (gitignored): analysis/results/<subject>/roi_efield_<montage>.csv
 
 ROIs from _rois.py (build_rois.py -> registration/<roi_dir>/): cortical/WM lobes, corpus callosum,
-subcortical; sampled over every element whose barycentre falls inside. "WholeBrain" is all GM+WM.
+mesencephalon/pons (Group 1); sampled over every element whose barycentre falls inside. "WholeBrain" is
+all GM+WM. Group 2 deep nuclei (CIT168, built by 07) are appended as extra E-field-only rows.
 
 CHARM assigns the deep nuclei predominantly to WM (tag=1), not cortical GM (tag=2), so we sample both
 WM and GM - the volumetric tissues where anisotropic conductivity matters.
@@ -22,46 +23,30 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "pipeline"))
 from _config import cfg  # noqa: E402
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _rois import load_labeled, assign_mesh_labels  # noqa: E402
+from _rois import load_labeled, assign_mesh_labels, mask_select  # noqa: E402
 from _sims import MODELS, sim_mesh                   # noqa: E402
+from _stats import pct_delta                         # noqa: E402
 
 WDIR, REG = cfg["WORK_DIR"], cfg["REG_DIR"]
 TISSUE_TAGS = (1, 2)
 WHOLE_BRAIN = "WholeBrain"
-# Tier-3 midbrain nuclei: overlap-allowed, E-field-only, sampled as SEPARATE binary masks
-# (never an int-label / winner-take-all volume). Cluster build output; absent on dev machines.
-TIER3_DIR = os.path.join(REG, "atlas_rois", "tier3")
-TIER3_NUCLEI = ("SNc", "SNr", "VTA", "RN", "STN")
-TIER3_SIDES = ("L", "R")
+# Group 2 deep nuclei: overlap-allowed, E-field-only, sampled as SEPARATE binary masks
+# (never an int-label / winner-take-all volume). Built by 07; absent on dev machines.
+NUCLEI_DIR = os.path.join(REG, "atlas_rois", "nuclei")
+NUCLEI = ("Pu", "Ca", "NAC", "GPe", "GPi", "SNc", "SNr", "VTA", "RN", "STN")
+NUCLEI_SIDES = ("L", "R")
 
 
-def load_tier3_masks(tier3_dir):
-    """Glob the tier-3 nucleus masks as INDEPENDENT binary volumes (overlap allowed).
+def load_nuclei_masks(nuclei_dir):
+    """Glob the Group 2 nucleus masks as INDEPENDENT binary volumes (overlap allowed).
     Each entry is (name, bool array, own affine). Returns [] if the dir is absent."""
     out = []
-    for side in TIER3_SIDES:
-        for nuc in TIER3_NUCLEI:
-            p = os.path.join(tier3_dir, f"roi_{side}_{nuc}.nii.gz")
+    for side in NUCLEI_SIDES:
+        for nuc in NUCLEI:
+            p = os.path.join(nuclei_dir, f"roi_{side}_{nuc}.nii.gz")
             for f in sorted(glob.glob(p)):
                 img = nib.load(f)
                 out.append((f"{nuc}_{side}", np.asarray(img.dataobj) > 0, img.affine))
-    return out
-
-
-def mask_select(bary_world, mask, mask_affine):
-    """Map FEM element barycentres (N x 3, world mm) to a single binary mask -> bool (N).
-    Same voxel-index math as _rois.assign_mesh_labels, but tests one mask (no winner-take-all)."""
-    inv = np.linalg.inv(mask_affine)
-    b = np.ascontiguousarray(bary_world, dtype=np.float64)
-    with np.errstate(all="ignore"):
-        vox = inv[:3, :3] @ b.T + inv[:3, 3:4]
-    vi = np.round(vox).astype(int)
-    ok = ((vi[0] >= 0) & (vi[0] < mask.shape[0]) &
-          (vi[1] >= 0) & (vi[1] < mask.shape[1]) &
-          (vi[2] >= 0) & (vi[2] < mask.shape[2]))
-    out = np.zeros(bary_world.shape[0], bool)
-    idx = np.where(ok)[0]
-    out[idx] = mask[vi[0][idx], vi[1][idx], vi[2][idx]]
     return out
 
 
@@ -73,10 +58,6 @@ def roi_stats(roi, tag, e):
                 median=float(np.median(er)), p95=float(np.percentile(er, 95)))
 
 
-def pct_delta(new, ref):
-    return float("nan") if (ref == 0 or np.isnan(ref) or np.isnan(new)) else 100 * (new - ref) / ref
-
-
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--montage", default="M1")
@@ -85,12 +66,12 @@ def main():
     args = ap.parse_args()
 
     labeled, lab_aff, names = load_labeled(REG)
-    # Tier-3 nuclei are extra ROWS after WholeBrain (overlap-allowed, E-field-only);
-    # absent on dev machines -> skip silently so 04 still runs the 25-ROI path.
-    tier3 = load_tier3_masks(TIER3_DIR)
-    if tier3:
-        print(f"Tier-3 nuclei (E-field only): {', '.join(n for n, _, _ in tier3)}")
-    roi_order = list(names.values()) + [WHOLE_BRAIN] + [n for n, _, _ in tier3]
+    # Group 2 nuclei are extra ROWS after WholeBrain (overlap-allowed, E-field-only);
+    # absent on dev machines -> skip silently so 04 still runs the Group 1 path.
+    nuclei = load_nuclei_masks(NUCLEI_DIR)
+    if nuclei:
+        print(f"Group 2 nuclei (E-field only): {', '.join(n for n, _, _ in nuclei)}")
+    roi_order = list(names.values()) + [WHOLE_BRAIN] + [n for n, _, _ in nuclei]
 
     results = {}
     for model in MODELS:
@@ -111,10 +92,10 @@ def main():
         tissue = np.isin(tag, TISSUE_TAGS)
         results[model] = {n: roi_stats((elab == k) & tissue, tag, e) for k, n in names.items()}
         results[model][WHOLE_BRAIN] = roi_stats(tissue, tag, e)
-        # Tier-3 nuclei: each its own binary mask + affine, overlap allowed (no winner-take-all).
+        # Group 2 nuclei: each its own binary mask + affine, overlap allowed (no winner-take-all).
         # May be legitimately empty in some subjects -> roi_stats returns NaN (06 is NaN-safe).
-        for tname, tmask, taff in tier3:
-            results[model][tname] = roi_stats(mask_select(bary, tmask, taff) & tissue, tag, e)
+        for nname, nmask, naff in nuclei:
+            results[model][nname] = roi_stats(mask_select(bary, nmask, naff) & tissue, tag, e)
 
     available = [m for m in MODELS if results[m] is not None]
     if not available:

@@ -1,9 +1,6 @@
-"""qc_figures.py - figures for the three-arm sims: per-model |E| overlay PNGs, the MD-dMRI minus DTI
-difference PNG, and the T1-space magnE NIfTIs (for fsleyes).
-
-NOT the analysis of record. Tissue-level |E| stats and the p95-range/spike validation are in
-qc_harness.py; per-ROI E-field and the model contrast (dE = E_MD-dMRI - E_DTI) are in
-04_extract_roi_efield.py / 05_mre_efield_comparison.py / 06_cohort_stats.py. This script only draws.
+"""QC figures for the three-model sims: per-model |E| overlay PNGs, the MD-dMRI minus DTI difference
+PNG, and the T1-space magnE NIfTIs (for fsleyes). Drawing only; the quantitative analysis of record
+is qc_harness.py (tissue |E|) and 04/05/06 (per-ROI E-field and model contrast).
 
 Usage:   simnibs_python analysis/qc_figures.py [--montage M1]
 Outputs: analysis/sim_compare/<subj>/  (magnE_<model>_T1.nii.gz, diff_MDdMRI_minus_DTI_T1.nii.gz, PNGs)
@@ -49,7 +46,7 @@ for name in MODELS:
              os.path.join(OUT, f"magnE_{name.replace('-', '_')}_T1.nii.gz"))
     print(f"  {name}: magnE -> magnE_{name.replace('-', '_')}_T1.nii.gz")
 
-# MD-dMRI minus DTI difference volume (the model effect; QUANTIFIED per ROI in 05/06, not here)
+# MD-dMRI minus DTI difference volume (quantified per ROI in 05/06)
 diff = None
 if "MD-dMRI" in vols and "DTI" in vols:
     diff = vols["MD-dMRI"] - vols["DTI"]
@@ -75,7 +72,7 @@ try:
             ax[r, c].axis("off")
         ax[r, 0].set_ylabel(n, rotation=90, fontsize=12)
         ax[r, 0].axis("on"); ax[r, 0].set_xticks([]); ax[r, 0].set_yticks([])
-    fig.suptitle(f"{SUBJ}  |E| (V/m), shared scale 0-{vmax:.2f}  (C3->Fp2, 2 mA)")
+    fig.suptitle(f"{SUBJ}  |E| (V/m), shared scale 0-{vmax:.2f}  (montage {MONTAGE})")
     fig.tight_layout(); fig.savefig(os.path.join(OUT, "compare_magnE.png"), dpi=90); plt.close(fig)
     print(f"PNG -> {OUT}/compare_magnE.png")
 
@@ -95,4 +92,4 @@ try:
 except Exception as e:
     print(f"  PNG generation skipped: {type(e).__name__}: {e}")
 
-print(f"\nVisualize:  fsleyes {os.path.join(M2M,'T1.nii.gz')} {os.path.join(OUT,'magnE_MD_dMRI_T1.nii.gz')} -cm hot")
+print(f"Visualize:  fsleyes {os.path.join(M2M,'T1.nii.gz')} {os.path.join(OUT,'magnE_MD_dMRI_T1.nii.gz')} -cm hot")

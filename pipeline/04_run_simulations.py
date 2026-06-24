@@ -17,7 +17,7 @@ contrast (C4 mirror optional). 4x1 ring: Datta et al. 2009 Brain Stimul 2:201; V
 (JoVE; J Pain 14:371).
 
 Output dirs are namespaced: sim_<montage>_<model>/ (e.g. sim_DLPFC_MD-dMRI). analysis/04_extract_roi_efield
-reads this convention. Free-water elimination was tested and dropped (null); see the FWE archive notes.
+reads this convention. Free-water elimination was tested and dropped (see the manuscript Methods).
 
 Usage (run in WORK_DIR):
   simnibs_python pipeline/04_run_simulations.py                              # all montages x all models
@@ -66,10 +66,15 @@ MONTAGES = {
 
 
 def validate_tensor(path):
-    t, t1 = nib.load(path), nib.load(os.path.join(SUBPATH, "T1.nii.gz"))
-    assert t.shape[:3] == t1.shape[:3], f"Tensor shape {t.shape[:3]} != T1 {t1.shape[:3]} (wrong space)"
-    assert t.shape[3] == 6, f"Tensor 4th dim {t.shape[3]} != 6 (FSL order)"
-    assert np.allclose(t.affine, t1.affine, atol=1e-3), "Tensor affine != T1 - wrong space!"
+    # SimNIBS samples the tensor onto mesh elements via its own affine, so the grid need not match the
+    # T1; require only a valid 6-component tensor with a finite, non-degenerate affine.
+    t = nib.load(path)
+    assert t.ndim == 4 and t.shape[3] == 6, f"Tensor must be 4D with 6 components (FSL order), got {t.shape}"
+    assert np.isfinite(t.affine).all() and abs(np.linalg.det(t.affine[:3, :3])) > 1e-9, \
+        "Tensor affine is degenerate"
+    # 03 already asserts finiteness before writing; spot-check the first component to catch an all-NaN
+    # write cheaply, without materializing the full 6-volume tensor (~1 GB on a fine grid).
+    assert np.isfinite(np.asarray(t.dataobj[..., 0])).all(), "Tensor has non-finite values"
 
 
 def run(montage_name, model_name):
@@ -127,7 +132,7 @@ def main():
         for k, e in errors.items():
             print(f"  {k}: {e}")
         sys.exit(1)
-    print("All requested simulations complete.\nNext: analysis/04_extract_roi_efield.py --montage <name>")
+    print("All requested simulations complete.")
 
 
 if __name__ == "__main__":

@@ -22,7 +22,7 @@ Headline dosimetry uses p95 (Huang 2017); pass --stat median to mirror the MRE-c
 
 Output: results/cohort_stats_<montage>_<stat>.csv (one row per ROI; H1/H3/age columns with FDR q-values).
 
-Usage:  conda run -n neuro python analysis/06_cohort_stats.py [--stat p95|median] [--cohort config/cohort.json]
+Usage:  <simnibs_python> analysis/06_cohort_stats.py [--stat p95|median] [--cohort config/cohort.json]
 """
 import os, sys, csv, json, glob, argparse
 import numpy as np
@@ -32,7 +32,8 @@ from _stats import bh_fdr, cohens_d, residualize, partial_pearson, rank_biserial
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MODELS = ["ISO", "DTI", "MD-dMRI"]
 WHOLE_BRAIN = "WholeBrain"   # aggregate row; excluded from per-family FDR so it does not inflate m
-TIER3 = {f"{n}_{s}" for n in ("SNc", "SNr", "VTA", "RN", "STN") for s in ("L", "R")}  # exploratory; own FDR family
+GROUP2 = {f"{n}_{s}" for n in ("Pu", "Ca", "NAC", "GPe", "GPi", "SNc", "SNr", "VTA", "RN", "STN")
+          for s in ("L", "R")}   # Group 2 deep nuclei: exploratory, own FDR family
 MIN_PAIRS = 6                # minimum finite paired observations to run a Wilcoxon test
 
 
@@ -125,7 +126,7 @@ def main():
                     p = np.nan
                 h1[ref] = (p, rank_biserial_paired(a[m], b[m]))
             # H3 PD vs HC on age-adjusted residuals. Finite-mask v/age/group together FIRST: a single NaN
-            # subject would otherwise make lstsq return an all-NaN beta and null the whole ROI (the tier-3
+            # subject would otherwise make lstsq return an all-NaN beta and null the whole ROI (the Group 2
             # nuclei, which 04 legitimately writes NaN for when empty, are exactly the affected ROIs).
             vf, agef, gf = v[fin], age[fin], group[fin]
             if vf.size >= MIN_PAIRS and len(set(vf)) > 1:
@@ -148,16 +149,21 @@ def main():
                 r_age, p_age = np.nan, np.nan
             rows.append(dict(roi=roi,
                              md_med=float(np.nanmedian(v)) if fin.any() else np.nan,
+                             iso_med=float(np.nanmedian(mats["ISO"][:, j]))
+                             if np.isfinite(mats["ISO"][:, j]).any() else np.nan,
+                             dti_med=float(np.nanmedian(mats["DTI"][:, j]))
+                             if np.isfinite(mats["DTI"][:, j]).any() else np.nan,
                              n_h1_dti=n_h1["DTI"], n_h1_iso=n_h1["ISO"],
                              p_h1_dti=h1["DTI"][0], es_h1_dti=h1["DTI"][1],
                              p_h1_iso=h1["ISO"][0], es_h1_iso=h1["ISO"][1],
                              p_h3=p_h3, d_h3=d_h3, r_age=r_age, p_age=p_age))
-        # FDR-BH within each family SEPARATELY: the primary Tier 1+2 ROIs, and the exploratory tier-3 nuclei.
-        # WholeBrain is excluded from both. Keeping tier-3 in its own family avoids inflating the primary m.
+        # FDR-BH within each family SEPARATELY: the primary Group 1 cross-comparison regions, and the
+        # exploratory Group 2 deep nuclei. WholeBrain is excluded from both. Keeping Group 2 in its own
+        # family avoids inflating the primary m.
         def fdr_family(key):
             q = np.full(len(rows), np.nan)
-            primary = [i for i, r in enumerate(rows) if r["roi"] not in TIER3 and r["roi"] != WHOLE_BRAIN]
-            exploratory = [i for i, r in enumerate(rows) if r["roi"] in TIER3]
+            primary = [i for i, r in enumerate(rows) if r["roi"] not in GROUP2 and r["roi"] != WHOLE_BRAIN]
+            exploratory = [i for i, r in enumerate(rows) if r["roi"] in GROUP2]
             for members in (primary, exploratory):
                 if members:
                     fq = bh_fdr([rows[i][key] for i in members])
@@ -175,12 +181,12 @@ def main():
         # MD-vs-DTI pairs. Surface it so the primary hypothesis is not silently underpowered.
         n_dti_cov = max((r["n_h1_dti"] for r in rows), default=0)
         if n_dti_cov < len(kept):
-            print(f"  [{montage}] WARNING: DTI arm present for at most {n_dti_cov}/{len(kept)} subjects "
+            print(f"  [{montage}] WARNING: DTI model present for at most {n_dti_cov}/{len(kept)} subjects "
                   f"-> H1 MD-vs-DTI underpowered where DTI is absent")
 
         os.makedirs(args.results, exist_ok=True)
         out = os.path.join(args.results, f"cohort_stats_{montage}_{args.stat}.csv")
-        cols = ["roi", "md_med", "n_h1_dti", "p_h1_dti", "q_h1_dti", "es_h1_dti",
+        cols = ["roi", "md_med", "iso_med", "dti_med", "n_h1_dti", "p_h1_dti", "q_h1_dti", "es_h1_dti",
                 "n_h1_iso", "p_h1_iso", "q_h1_iso", "es_h1_iso",
                 "p_h3", "q_h3", "d_h3", "r_age", "p_age", "q_age"]
         with open(out, "w", newline="") as f:

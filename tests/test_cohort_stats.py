@@ -30,7 +30,7 @@ def build(tmp, seed=0):
         md[2] = 0.30 + 0.06 * pd[k] + 0.004 * (age[k] - 65) + rng.normal(0, 0.02)  # H3: PD>HC + age
         md[3] = 0.30 + rng.normal(0, 0.02)                      # null
         if k == 0:
-            md[2] = np.nan                                      # one NaN subject (e.g. empty tier-3 ROI):
+            md[2] = np.nan                                      # one NaN subject (e.g. empty Group 2 nucleus ROI):
             # pre-fix this nulled the whole ROI's H3/age; post-fix the finite mask recovers it from the rest
         d = os.path.join(res, s["id"]); os.makedirs(d, exist_ok=True)
         with open(os.path.join(d, "roi_efield_M1.csv"), "w", newline="") as f:
@@ -73,6 +73,12 @@ def main():
            f"d={out['ROI_H3pos']['d_h3']:.2f}")
         ck("null ROI is NOT H3-significant", not (out["ROI_null"]["q_h3"] < 0.05),
            f"q={out['ROI_null']['q_h3']:.3g}")
+        ck("per-model summaries present", {"iso_med", "dti_med"}.issubset(out["ROI_H1pos"]),
+           f"cols={sorted(out['ROI_H1pos'])[:6]}")
+        ck("iso_med near planted ISO base 0.28", abs(out["ROI_null"]["iso_med"] - 0.28) < 0.03,
+           f"iso_med={out['ROI_null'].get('iso_med', float('nan')):.3f}")
+        ck("dti_med near planted DTI base 0.30", abs(out["ROI_null"]["dti_med"] - 0.30) < 0.03,
+           f"dti_med={out['ROI_null'].get('dti_med', float('nan')):.3f}")
 
         print(f"\n{'ALL PASS' if all(checks) else 'SOME CHECKS FAILED'}")
         sys.exit(0 if all(checks) else 1)

@@ -6,7 +6,7 @@ fallback to the legacy sim_<token> = old M1 layout).
 """
 import os
 
-# model name -> (sim-dir token, mesh-field suffix). ISO is scalar; both anisotropic arms are 'vn'.
+# model name -> (sim-dir token, mesh-field suffix). ISO is scalar; both anisotropic models are 'vn'.
 MODEL_TOKENS = {"ISO": ("ISO", "scalar"), "DTI": ("DTI", "vn"), "MD-dMRI": ("MD_dMRI", "vn")}
 MODELS = list(MODEL_TOKENS)
 

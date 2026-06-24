@@ -4,9 +4,9 @@ metrics, a PASS/FLAG per stage, and an overall verdict. Beyond the absolute thre
 metric > 3 MAD from the cohort median is also flagged. An outlier is a signal to inspect/fix.
 
 Usage:
-  simnibs_python analysis/qc_harness.py                       # the subject in config/config.sh
-  simnibs_python analysis/qc_harness.py --cohort cohort.json  # [{"id","work","m2m"}...]
-  simnibs_python analysis/qc_harness.py --calibrate           # suggest cohort-percentile thresholds, then exit
+  simnibs_python analysis/qc_harness.py                            # the subject in config/config.sh
+  simnibs_python analysis/qc_harness.py --cohort config/cohort.json  # {"subjects":[{"id",...}]} or [{"id","work","m2m"}...]
+  simnibs_python analysis/qc_harness.py --calibrate                # suggest cohort-percentile thresholds, then exit
 """
 import os, sys, csv, json, glob, argparse
 import numpy as np
@@ -37,7 +37,7 @@ THR = dict(
 )
 SIGMA0 = {"WM": 0.126, "GM": 0.275}                  # tissue baseline conductivities (S/m), vn anchors
 SAMSEG = dict(wm=(2, 41), gm=(3, 42), csf=(4, 43, 14, 15, 24), brainstem=(16,))
-NUCLEI = ["SNc", "SNr", "VTA", "RN", "STN"]
+NUCLEI = ["Pu", "Ca", "NAC", "GPe", "GPi", "SNc", "SNr", "VTA", "RN", "STN"]
 
 
 def _load(p):
@@ -50,7 +50,7 @@ def _data(p):
 
 
 def _roi_dir(reg):
-    """Tier-1 ROI dir: the recon-all parcellation (freesurfer_rois) built by analysis/build_rois.py.
+    """Group 1 ROI dir: the recon-all parcellation (freesurfer_rois) built by analysis/build_rois.py.
     Mirrors analysis/_rois.load_labeled so QC reads the same masks."""
     return os.path.join(reg, "freesurfer_rois")
 
@@ -328,15 +328,14 @@ def qc_rois(P):
     return m, f
 
 
-def qc_tier3(P):
-    # Tier-3 midbrain nuclei (CIT168/Pauli) are OVERLAP-ALLOWED separate binary masks
-    # (07_build_tier3_nuclei.sh). Glob the per-nucleus masks; do NOT read tier3_labeled.nii.gz
-    # (winner-take-all int labels destroy the intended overlap). Pairwise overlap is expected, logged
-    # not flagged.
+def qc_nuclei(P):
+    # Group 2 deep nuclei (CIT168/Pauli) are OVERLAP-ALLOWED separate binary masks (07_build_nuclei.sh).
+    # Glob the per-nucleus masks; do NOT read nuclei_labeled.nii.gz (winner-take-all int labels destroy
+    # the intended overlap). Pairwise overlap is expected (midbrain/STN), logged not flagged.
     m, f = {}, []
-    t3 = os.path.join(P["reg"], "atlas_rois", "tier3")
-    paths = sorted(glob.glob(os.path.join(t3, "roi_*.nii.gz")))
-    paths = [p for p in paths if os.path.basename(p) != "tier3_labeled.nii.gz"]
+    nd = os.path.join(P["reg"], "atlas_rois", "nuclei")
+    paths = sorted(glob.glob(os.path.join(nd, "roi_*.nii.gz")))
+    paths = [p for p in paths if os.path.basename(p) != "nuclei_labeled.nii.gz"]
     masks = {}
     for p in paths:
         d = _data(p)
@@ -345,35 +344,101 @@ def qc_tier3(P):
         b = d > 0
         masks[os.path.basename(p)] = b
         if b.sum() == 0:
-            f.append(f"tier3:empty({os.path.basename(p)})")
-    m["tier3_n_total"] = len(masks)
-    m["tier3_n_empty"] = sum(1 for b in masks.values() if b.sum() == 0)
+            f.append(f"nuclei:empty({os.path.basename(p)})")
+    m["nuclei_n_total"] = len(masks)
+    m["nuclei_n_empty"] = sum(1 for b in masks.values() if b.sum() == 0)
     names = sorted(masks)
     n_ov = 0
     for i in range(len(names)):
         for j in range(i + 1, len(names)):
             if (masks[names[i]] & masks[names[j]]).any():
                 n_ov += 1
-    m["tier3_n_overlap_pairs"] = n_ov   # expected (overlap-allowed), reported not flagged
+    m["nuclei_n_overlap_pairs"] = n_ov   # expected (overlap-allowed), reported not flagged
     if paths and not masks:
-        f.append("tier3:unreadable")
+        f.append("nuclei:unreadable")
     # presence: each nucleus should have an L and R mask (07 emits roi_{L,R}_{nucleus}.nii.gz)
     if masks:
         for nuc in NUCLEI:
             for side in ("L", "R"):
                 if f"roi_{side}_{nuc}.nii.gz" not in masks:
-                    f.append(f"tier3:missing(roi_{side}_{nuc})")
+                    f.append(f"nuclei:missing(roi_{side}_{nuc})")
+    return m, f
+
+
+def qc_roi_efield_csv(P):
+    # Mask presence (qc_rois/qc_nuclei) is necessary but not sufficient: an ROI whose mask exists but
+    # overlaps no GM/WM tetrahedra reads back as all-NaN in the per-subject roi_efield CSV and would
+    # otherwise pass QC silently (this is what missed VTA_R for one subject). Open the actual CSV that
+    # 04_extract_roi_efield.py wrote and flag any ROI that is all-NaN across a model's columns.
+    m, f = {}, []
+    montage = P.get("montage", "M1")
+    csv_path = os.path.join(P["results_root"], P["id"], f"roi_efield_{montage}.csv")
+    if not os.path.exists(csv_path):
+        f.append(f"roi_efield:missing(roi_efield_{montage}.csv)"); return m, f
+    rows = list(csv.DictReader(open(csv_path)))
+    if not rows:
+        f.append("roi_efield:empty"); return m, f
+    # Per-model columns are "<model>_p95" / "<model>_median" (model names from _sims.MODELS).
+    cols = {mod: [f"{mod}_p95", f"{mod}_median"] for mod in MODELS}
+
+    def _is_nan(v):
+        if v is None or v == "":
+            return True
+        try:
+            return not np.isfinite(float(v))
+        except ValueError:
+            return True
+    n_nan_rows = 0
+    for r in rows:
+        roi = r.get("ROI", "?")
+        for mod, mcols in cols.items():
+            present = [c for c in mcols if c in r]
+            if present and all(_is_nan(r[c]) for c in present):
+                n_nan_rows += 1
+                f.append(f"roi_efield:all_nan({roi},{mod})")   # mask exists but no GM/WM overlap
+    m["roi_efield_n_rows"] = len(rows); m["roi_efield_n_nan"] = n_nan_rows
     return m, f
 
 
 STAGES = [("00_charm", qc_charm), ("01_dwi2cond", qc_dwi2cond), ("02_register", qc_register),
           ("03_conductivity", qc_conductivity), ("04_sims", qc_sims), ("05_rois", qc_rois),
-          ("06_tier3", qc_tier3)]
+          ("06_nuclei", qc_nuclei), ("07_roi_efield", qc_roi_efield_csv)]
+
+
+def _cohort_local_root():
+    """Root holding the per-subject dirs the cohort.json ids index into: data/cohort_local/<id>/
+    (each with work/m2m_<id> + registration). Resolved relative to the repo root, NOT cfg["WORK_DIR"]
+    (which tracks the active single-subject config and may point at the pilot, not the cohort layout).
+    Override with COHORT_LOCAL_ROOT if the cohort lives elsewhere."""
+    env = os.environ.get("COHORT_LOCAL_ROOT")
+    if env:
+        return env
+    repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(repo, "data", "cohort_local")
+
+
+def _subject_paths(sid, root):
+    """Per-subject path dict from the data/cohort_local/<id>/ layout (work/m2m_<id>, registration)."""
+    base = os.path.join(root, sid)
+    work = os.path.join(base, "work")
+    m2m = os.path.join(work, f"m2m_{sid}")
+    reg = os.path.join(base, "registration")
+    return {"id": sid, "work": work, "m2m": m2m, "reg": reg,
+            "samseg": os.path.join(m2m, "segmentation", "labeling.nii.gz"),
+            "cc_mask": os.path.join(_roi_dir(reg), "roi_CC.nii.gz")}
 
 
 def resolve_subjects(args):
     if args.cohort and os.path.exists(args.cohort):
-        return json.load(open(args.cohort))
+        data = json.load(open(args.cohort))
+        # Two accepted shapes:
+        #   (a) config/cohort.json: {"montages":[...], "subjects":[{"id","group",...}]} - derive
+        #       per-subject paths from the data/cohort_local/<id>/ layout.
+        #   (b) a flat list of explicit path dicts ([{"id","work","m2m",...}]) - used as-is.
+        if isinstance(data, dict) and "subjects" in data:
+            root = _cohort_local_root()
+            return [_subject_paths(s["id"], root) for s in data["subjects"]]
+        return data
     return [{"id": cfg["SUBJECT"], "work": cfg["WORK_DIR"], "m2m": cfg["M2M_DIR"],
              "reg": cfg["REG_DIR"],
              "samseg": os.path.join(cfg["M2M_DIR"], "segmentation", "labeling.nii.gz"),
@@ -413,6 +478,10 @@ def _calibrate(out):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--cohort"); ap.add_argument("--out", default="analysis/qc")
+    ap.add_argument("--results-root",
+                    default=os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                         "analysis", "results"),
+                    help="dir holding <id>/roi_efield_<montage>.csv from 04_extract_roi_efield.py")
     ap.add_argument("--montage", default="M1", help="which montage's sims to QC (default M1)")
     ap.add_argument("--calibrate", action="store_true",
                     help="read out/qc_summary.csv and suggest cohort-percentile thresholds, then exit")
@@ -429,6 +498,7 @@ def main():
         P.setdefault("samseg", os.path.join(P["m2m"], "segmentation", "labeling.nii.gz"))
         P.setdefault("cc_mask", os.path.join(_roi_dir(P["reg"]), "roi_CC.nii.gz"))
         P.setdefault("montage", args.montage)
+        P.setdefault("results_root", args.results_root)
         row = {"subject": P["id"]}; flags_by_stage = {}
         for stage_name, fn in STAGES:
             try:
@@ -513,7 +583,7 @@ def _overlay_png(P, png_dir):
         if ov is not None:
             a.imshow(np.rot90(np.ma.masked_equal(ov, 0)), cmap="tab10", alpha=0.5, vmin=1, vmax=10)
         a.axis("off")
-    fig.suptitle(f"{P['id']} - T1 + Tier-1 volume ROIs"); fig.tight_layout()
+    fig.suptitle(f"{P['id']} - T1 + Group 1 volume ROIs"); fig.tight_layout()
     fig.savefig(os.path.join(png_dir, f"{P['id']}_overlay.png"), dpi=80); plt.close(fig)
 
 

@@ -50,9 +50,9 @@ both deliberate:
 
 SimNIBS bounds the tensor with two parameters, left at their **defaults** and identical for both
 anisotropic models: `aniso_maxratio = 10` (caps the eigenvalue ratio at 10:1; the binding one; top of
-the 7–10:1 ex-vivo WM range, Nicholson 1965 / Ranck & BeMent 1965; clips ~0.1% of DTI and ~0.7% of
-⟨D⟩ voxels) and `aniso_maxcond = 2` S/m (caps eigenvalue magnitude; non-binding under `'vn'`). The
-tensor is supplied as a 6-component NIfTI in FSL order `[Dxx, Dxy, Dxz, Dyy, Dyz, Dzz]`.
+the 7–10:1 ex-vivo WM range, Nicholson 1965 / Ranck & BeMent 1965) and `aniso_maxcond = 2` S/m (caps
+eigenvalue magnitude; non-binding under `'vn'`). The tensor is supplied as a 6-component NIfTI in FSL
+order `[Dxx, Dxy, Dxz, Dyy, Dyz, Dzz]`.
 
 Exact `'vn'` implementation, verified against SimNIBS 4.6 `cond_utils.cond2elmdata` / `_fix_eigv`
 (master-branch code - pin the methods to this version). Per element: (1) eigenvalues are normalized to
@@ -62,10 +62,9 @@ eigenvalue below `λ1/aniso_maxratio` is raised to `λ1/aniso_maxratio` (the bin
 non-positive-definite handling is asymmetric and worth stating: a tensor with **all three eigenvalues
 ≤ 0** is replaced by isotropic σ0, but a **mixed-sign** tensor (λ1>0, λ2/λ3≤0) is NOT isotropized - its
 negative eigenvalues are raised to `λ1/10`, yielding a spurious 10:1 prolate along an unreliable axis.
-In our data the DTI and MD-dMRI tensors have ~0% mixed-sign voxels in any ROI, so this branch is never
-exercised; the MD-dMRI arm additionally isotropizes its ~15% non-positive-definite ⟨D⟩ voxels upstream
-in `03` (those land in CSF/skull, not WM/GM). For the cohort, a per-arm mixed-sign rate per ROI should
-be logged so noisier or atrophied subjects do not silently take the prolate branch.
+The MD-dMRI model isotropizes its non-positive-definite ⟨D⟩ voxels upstream in `03` (these fall in
+CSF/skull, not WM/GM). For the cohort, a per-model mixed-sign rate per ROI is logged so noisier or
+atrophied subjects do not silently take the prolate branch.
 
 ## DTI model (baseline)
 
@@ -74,8 +73,8 @@ already eddy/topup-corrected, is fitted with FSL `dtifit --save_tensor`; the ten
 `dwi2cond --all --regmthd=12dof` for its standard T1 coregistration + vecreg reorientation - the documented
 SimNIBS anisotropy path (dwi2cond accepts a preprocessed dtifit tensor as input). The 12-DoF affine, not
 dwi2cond's fnirt default, is the option the SimNIBS docs prescribe when "the distortion correction during
-preprocessing is good enough"; our registration bake-off confirmed fnirt over-warps the corrected data
-(~5 mm) without improving alignment. Its
+preprocessing is good enough"; our registration bake-off found fnirt over-warps the corrected data
+without improving alignment. Its
 limitation is intrinsic to single-shell DTI: the mono-exponential fit averages over all fibre
 orientations in a voxel and is biased by non-Gaussian diffusion (kurtosis), so crossing fibres and
 dispersion depress the measured anisotropy.
@@ -95,25 +94,23 @@ corrected: like the DTI tensor it still contains any CSF partial volume.)
 
 **Why the covariance cumulant and not the full DTD Monte-Carlo mean.** The toolbox also produces a
 non-parametric diffusion-tensor-distribution fit (de Almeida Martins & Topgaard; `dps.mat`), whose
-mean tensor we used initially. On this data that Monte-Carlo mean is magnitude-inflated
-(WM MD ≈ 1.53 vs 0.97 µm²/ms for the covariance fit, which matches the toolbox's own
-`dtd_covariance_MD` at r = 0.99) and, more importantly, its eigenframe is unreliable: its principal
-axis sits ~40° off a robust low-b DTI in core WM and *worsens* with FA - the Monte-Carlo inversion has
-poor angular resolution for the mean tensor. The covariance cumulant mean is the standard QTI estimate,
-de-inflated, and well oriented (~14° from the same-data DTI in core WM). Its one cost: the 2nd-order
-cumulant overshoots into non-positive-definite mean tensors in ~15% of low-SNR/edge voxels (MD far
-below real tissue, FA ≈ 1 - failed fits, not real anisotropy). Those voxels fall back to **isotropic**
-(σ0 under `'vn'`), so they inject neither spurious anisotropy nor orientation; real tissue (FA<0.5) is
-~98% positive-definite, and after the fallback the conductivity tensor reaches the 10:1 cap in <1% of
-voxels.
+mean tensor we used initially. On this data that Monte-Carlo mean is magnitude-inflated relative to the
+covariance fit (whose MD matches the toolbox's own `dtd_covariance_MD`) and its eigenframe is unreliable:
+the Monte-Carlo inversion has poor angular resolution for the mean tensor, so its principal axis sits well
+off a robust low-b DTI and worsens with FA. The covariance cumulant mean is the standard QTI estimate,
+de-inflated and better oriented against the same-data DTI. Its one cost: the 2nd-order cumulant overshoots
+into non-positive-definite mean tensors in a minority of low-SNR/edge voxels (MD far below real tissue,
+FA ≈ 1 - failed fits, not real anisotropy). Those voxels fall back to **isotropic** (σ0 under `'vn'`), so
+they inject neither spurious anisotropy nor orientation. The per-subject isotropized fraction and the
+fraction reaching the 10:1 cap are reported with the results.
 
-The principal axis agrees with the *independent* single-shell DTI V1 to ~8° (median, core WM, in T1,
-measured on the HC pilot; see Registration - both anisotropic arms register by the same affine class). So the DTI↔MD-dMRI E-field contrast reflects
-**both** the tensor-estimation difference **and** a residual orientation difference from the separate
-DTI acquisition; it is not a magnitude-only comparison.
-Replacing the full-DTD mean with the QTI covariance mean shifts the deep-target E-field by ~1.6%
-(median), within conductivity uncertainty - the tDCS field is intrinsically weakly sensitive to
-white-matter anisotropy (Suh, Lee & Kim 2012, Phys Med Biol 57:6961).
+The principal axes of the *independent* single-shell DTI and the MD-dMRI ⟨D⟩ tensors differ; the magnitude of
+this divergence and its robustness to the registration method are reported with the results. So the
+DTI↔MD-dMRI E-field contrast reflects **both** the tensor-estimation difference **and** a residual
+orientation difference from the separate DTI acquisition; it is not a magnitude-only comparison.
+Replacing the full-DTD mean with the QTI covariance mean shifts the deep-target E-field within
+conductivity uncertainty - the tDCS field is intrinsically weakly sensitive to white-matter anisotropy
+(Suh, Lee & Kim 2012, Phys Med Biol 57:6961).
 
 ## Registration
 
@@ -125,8 +122,10 @@ reverse-PE + `topup` + eddy), so an **affine dMRI → T1** is the right class (s
 note below). The registration is a **12-DOF affine driven by the dMRI model S0**, FLIRT to the charm T2
 (mutual information), then applied to FA / eigenvalues / v1 by `vecreg`; the S0 driver is chosen by a
 per-subject orientation bake-off (S0 beats FA as a driver, and `fnirt` over-warps the already-corrected
-data). The DTI baseline (`dwi2cond`) registers by the same affine class (`-r 12dof`), so both anisotropic
-arms share a registration path and the only DTI↔MD-dMRI difference is the tensor. (Historical: an earlier
+data). The DTI baseline (`dwi2cond`) registers by the same affine *class* (12-DOF) but a different driver
+and target (FA → T1, correlation-ratio, vs the MD-dMRI S0 → T2, mutual-information), so the registration is
+harmonized in class, not identical (quantified by the matched-registration control under Limitations).
+(Historical: an earlier
 single-HC pilot lacked a reverse-PE volume, so it used the `dwi2cond`-default nonlinear `fnirt` FA → T1
 substitute - kept locally, not in this repo.)
 
@@ -142,8 +141,11 @@ Whole-tensor component-wise interpolation, by contrast, averages neighbouring te
 anisotropy - the tensor "swelling" that log-Euclidean interpolation (Arsigny 2006) and PPD
 reorientation are designed to avoid. Our scheme is a pragmatic stand-in for full log-Euclidean tensor
 interpolation (e.g. DTI-TK): it preserves the native anisotropy at the cost of not reproducing the
-partial-volume blurring the 2.5 mm resolution incurs (a disclosed trade-off). Both anisotropic arms
-register by the same affine class, so registration does not confound their E-field contrast.
+partial-volume blurring the 2.5 mm resolution incurs (a disclosed trade-off). Both anisotropic models
+register by the same affine class (12-DOF), with model-specific drivers and targets (DTI FA → T1; MD-dMRI
+S0 → T2); the sensitivity of the orientation comparison to the registration method is assessed by a
+matched-registration check and reported with the results. Because `'vn'` discards tensor magnitude, the
+E-field depends on tensor shape (anisotropy ratios and orientation) only.
 
 **Distortion correction governs the registration choice.** The gold-standard EPI-distortion correction
 is FSL `topup` with a reverse-phase-encode b=0, after which a *rigid/affine* dMRI→T1 coregistration
@@ -158,44 +160,59 @@ and against the delivered scalar references), rather than assumed.
 
 E-field and microstructure are read out over ROI masks in mesh space built from a FreeSurfer
 `recon-all` parcellation (`analysis/build_rois.py` -> `registration/freesurfer_rois/`, loaded by the
-analysis scripts through `analysis/_rois.py`): cortical and white-matter lobes (Desikan grouped to
-frontal/parietal/temporal/occipital, WM from the real wmparc), corpus callosum, the aseg subcortical
-structures (thalamus, caudate, putamen, pallidum, accumbens, hippocampus, amygdala), and the
-mesencephalon/pons split from the Iglesias 2015 brainstem subsegmentation. Whole-brain GM+WM is taken
-from the charm tissue tags downstream. This matches Olsson et al. 2025, which used FreeSurfer 7.2 for
-the same structures; the cohort ships `recon-all` pre-computed, so the parcellation is consumed
-directly (`recon-all` is run on the cluster whenever a new subject needs it). The recon-all segmentation is registered to the charm T1 (FLIRT 6-DOF rigid) so the masks land in
-the FEM/E-field space. The fine midbrain nuclei
-(SNc/SNr/VTA/RN/STN), below aseg resolution, come from the CIT168/Pauli 2017 atlas warped via ANTs
-(`analysis/07_build_tier3_nuclei.sh`) and merge into the ROI set when needed. Each ROI is sampled over
-every GM/WM element it contains, not a fixed-radius sphere.
+analysis scripts through `analysis/_rois.py`). The ROIs fall in two functional groups. Group 1, the
+cross-comparison regions, are the four cortical lobes and four white-matter lobes (Desikan grouped to
+frontal/parietal/temporal/occipital, WM from the real wmparc), corpus callosum, and the
+mesencephalon/pons split from the Iglesias 2015 brainstem subsegmentation, all bilateral by
+construction. Group 1 carries both the H1 field result and the MRE cross-comparison. Whole-brain GM+WM
+is taken from the charm tissue tags downstream. This matches Olsson et al. 2025, which used FreeSurfer
+7.2 for the same structures; the cohort ships `recon-all` pre-computed, so the parcellation is consumed
+directly (`recon-all` is run on the cluster whenever a new subject needs it). The recon-all segmentation
+is registered to the charm T1 (FLIRT 6-DOF rigid) so the masks land in the FEM/E-field space. Group 2,
+the deep stimulation-relevant nuclei, are the putamen, caudate, nucleus accumbens, external and internal
+globus pallidus, substantia nigra pars compacta and reticulata, ventral tegmental area, red nucleus, and
+subthalamic nucleus (Pu Ca NAC GPe GPi SNc SNr VTA RN STN, split left and right), all from the
+CIT168/Pauli 2017 atlas warped via ANTs (`analysis/07_build_nuclei.sh`); they are field-only and
+exploratory. The aseg subcortical structures used previously (thalamus, hippocampus, amygdala, and the
+aseg basal ganglia) are dropped, so every subcortical readout is drawn from the single CIT168 atlas.
+Each ROI is sampled over every GM/WM element it contains, not a fixed-radius sphere.
 
 ## Limitations
 
 - **Resolution.** MD-dMRI is acquired at 2.5 mm; small deep nuclei (SN, STN) are near or below a
   voxel, so partial volume biases the per-voxel tensor at exactly the PD targets of interest. This is
-  not fixable without reacquisition. The Tier-3 midbrain-nucleus ROIs (SNc/SNr/VTA/RN/STN, CIT168/Pauli)
-  therefore carry the largest per-voxel tensor uncertainty, and their E-field readouts must be read with
-  this partial-volume caveat - primary inference leans on the coarser Tier-1/2 ROIs and the cohort, with
-  the merged SN/VTA mask used for E-field-only reporting (no MRE cross-correlation at this resolution).
+  not fixable without reacquisition. All Group 2 nuclei come from CIT168 with overlap-allowed masks and
+  are reported as exploratory field-only; the basal ganglia are well-resolved (overlap minimal,
+  partial-volume modest) while the midbrain and subthalamic nuclei are at or below voxel size and
+  additionally subject to inter-nucleus overlap, so the latter should be read as order-of-magnitude
+  field exposure rather than precise per-nucleus values. Primary inference therefore leans on the
+  coarser Group 1 cross-comparison regions and the cohort, with the Group 2 nuclei used for
+  E-field-only reporting (no MRE cross-correlation at this resolution).
 - **Magnitude is discarded by `'vn'`.** Conductivity magnitude is set by literature σ0, not by the
-  measured ⟨D⟩. This is deliberate (per-voxel diffusion magnitude at 2.5 mm is unreliable: within-WM
-  geometric-mean CoV ≈ 46%, mostly partial volume and noise), but it means disease-related MD changes
-  enter only through anisotropy/orientation, not magnitude.
+  measured ⟨D⟩. This is deliberate (per-voxel diffusion magnitude at 2.5 mm is unreliable, dominated by
+  partial volume and noise), but it means disease-related MD changes enter only through
+  anisotropy/orientation, not magnitude.
 - **Anisotropy is a small effect; the scalar conductivities dominate.** For cortical targets, modeling
   brain anisotropy from DTI/QTI changes the tES E-field comparatively little, while uncertainty in the
   ohmic tissue conductivities is the main source of E-field variability, and MREIT is only weakly
   sensitive to brain anisotropy (Mosayebi-Samani et al. 2025, Imaging Neuroscience - SimNIBS team, same
-  charm/dwi2cond/`'vn'` framework). The DTI↔MD-dMRI contrast here (~2% median at deep targets) sits in
-  that small-effect regime: the value of the QTI input is a more principled tensor estimate (kurtosis-aware
-  multi-shell estimation + orientation), expected to be less biased, not a larger field.
+  charm/dwi2cond/`'vn'` framework). The DTI↔MD-dMRI contrast here sits in that small-effect regime: the
+  value of the QTI input is a more principled tensor estimate (kurtosis-aware multi-shell estimation +
+  orientation), expected to be less biased, not a larger field.
+- **De-kurtosis is a motivation, not a magnitude claim.** ⟨D⟩ is used as a less kurtosis-biased estimate of
+  the macroscopic tensor than single-shell DTI (the first cumulant of the covariance fit separates kurtosis
+  into a second-cumulant term; Westin 2016). The diffusion-model E-field comparison is sensitive to diffusion
+  preprocessing (spatial smoothing, and the difference in native resolution between the two acquisitions), so
+  it is treated as a controlled-input comparison rather than a magnitude result; the preprocessing-sensitivity
+  analysis is reported with the results.
 - **Validation.** No in-vivo conductivity ground truth exists; the model is motivated by bias
   arguments, not direct validation. MR current-density imaging (MRCDI/MREIT; Gregersen 2024) is the
   planned validation route.
-- **DTI baseline.** The DTI model is a separate single-shell acquisition, but it is registered by the
-  *same* affine FA/S0→T1 class as the MD-dMRI arm; its principal direction differs from ⟨D⟩ by ~8°
-  (median, core WM, measured on the HC pilot), reflecting the genuine tensor-estimation/acquisition
-  difference rather than a registration-method mismatch.
+- **DTI baseline.** The DTI model is a separate single-shell acquisition, registered by the same affine
+  class (12-DOF) as the MD-dMRI model but with a model-specific driver and target (dwi2cond FA→T1 vs S0→T2).
+  Its principal direction differs from ⟨D⟩, reflecting the genuine tensor-estimation/acquisition difference;
+  the registration-method sensitivity and the divergence magnitude are assessed by a matched-registration
+  check and reported with the results.
 
 ## References
 
@@ -216,6 +233,6 @@ Mosayebi-Samani et al. (2025) Imaging Neuroscience - brain anisotropy has a smal
 Free-water elimination (σ ∝ ⟨D⟩_tissue), magnitude preservation (`'dir'` / per-tissue), and μFA /
 covariance were each tested and rejected. In brief: FWE is ~null under `'vn'` and ill-posed at this
 volume count; magnitude preservation injects
-~46%-CoV partial-volume/noise (and SimNIBS `'dir'` also distorts the GM/WM contrast); μFA and the
+partial-volume and noise variance (and SimNIBS `'dir'` also distorts the GM/WM contrast); μFA and the
 covariance tensor are microscopic measures with no macroscopic eigenframe, so they cannot define a
 conductivity tensor (they remain useful for interpretation).

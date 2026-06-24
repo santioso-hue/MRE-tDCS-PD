@@ -4,8 +4,9 @@ ROIs are int-label masks on the charm/mesh grid, built from the recon-all parcel
 analysis/build_rois.py:
   registration/freesurfer_rois/roi_labels_meshspace.nii.gz   int labels
   registration/freesurfer_rois/rois.json                     {label: name}
-Coverage: cortical and WM lobes, corpus callosum, aseg subcortical (thalamus, caudate, putamen,
-pallidum, accumbens, hippocampus, amygdala), brainstem split into Mesencephalon + Pons.
+Coverage (Group 1, cross-comparison regions): cortical and WM lobes, corpus callosum, brainstem split
+into Mesencephalon + Pons. Group 2 deep nuclei (CIT168, built by 07) are loaded separately by 04 as
+overlap-allowed masks, not routed through this int-label volume.
 Consumed by 04 (E-field per ROI) and 05 (MRE comparison); each ROI is sampled over every
 element/voxel it contains (no fixed-radius spheres).
 """
@@ -19,6 +20,20 @@ PD_EPS = 1e-3    # positive-definite floor on the smallest eigenvalue (um2/ms). 
                  # reconstruction floor (qc_harness._vn_check shares the >0 intent, not the value). ASSUMES the
                  # tensor is the um2/ms <D> from 03; do NOT pass an mm2/s dtifit tensor (08 rescales for that).
 FILL_EPS = 1e-6  # |Dxx| reject for empty/background voxels (distinct from the PD floor above)
+
+
+def _vox_lookup(world, affine, shape):
+    """World-mm coords (N,3) -> rounded voxel indices (3,N) and an in-bounds mask (N) for grid `shape`.
+    One source of truth for the world->voxel rounding shared by assign_mesh_labels, mask_select, and
+    _labels_on_grid."""
+    inv = np.linalg.inv(affine)
+    w = np.ascontiguousarray(world, dtype=np.float64)
+    with np.errstate(all="ignore"):
+        vox = inv[:3, :3] @ w.T + inv[:3, 3:4]
+    vi = np.round(vox).astype(int)
+    ok = ((vi[0] >= 0) & (vi[0] < shape[0]) & (vi[1] >= 0) & (vi[1] < shape[1])
+          & (vi[2] >= 0) & (vi[2] < shape[2]))
+    return vi, ok
 
 
 def _pack_6comp(t6, sel):
@@ -81,12 +96,8 @@ def _labels_on_grid(target_img, labeled, lab_affine):
     ii, jj, kk = np.indices((nx, ny, nz))
     grid = np.vstack([ii.ravel(), jj.ravel(), kk.ravel(), np.ones(ii.size)]).astype(np.float64)
     with np.errstate(all="ignore"):
-        world = np.asarray(target_img.affine, np.float64) @ grid
-        vox = np.linalg.inv(lab_affine) @ world
-    vi = np.round(vox[:3]).astype(int)
-    ok = ((vi[0] >= 0) & (vi[0] < labeled.shape[0]) &
-          (vi[1] >= 0) & (vi[1] < labeled.shape[1]) &
-          (vi[2] >= 0) & (vi[2] < labeled.shape[2]))
+        world = (np.asarray(target_img.affine, np.float64) @ grid)[:3].T   # (N,3) world coord per voxel
+    vi, ok = _vox_lookup(world, lab_affine, labeled.shape)
     out = np.zeros(ii.size, int)
     out[ok] = labeled[vi[0][ok], vi[1][ok], vi[2][ok]]
     return out.reshape((nx, ny, nz))
@@ -148,15 +159,17 @@ def sample_tensor_fa_medians(tensor_path, labeled, lab_affine, names):
 
 def assign_mesh_labels(bary_world, labeled, lab_affine):
     """ROI label per FEM element barycentre (N x 3, subject world mm) -> (N int)."""
-    inv = np.linalg.inv(lab_affine)
-    b = np.ascontiguousarray(bary_world, dtype=np.float64)
-    with np.errstate(all="ignore"):
-        vox = inv[:3, :3] @ b.T + inv[:3, 3:4]
-    vi = np.round(vox).astype(int)
-    ok = ((vi[0] >= 0) & (vi[0] < labeled.shape[0]) &
-          (vi[1] >= 0) & (vi[1] < labeled.shape[1]) &
-          (vi[2] >= 0) & (vi[2] < labeled.shape[2]))
+    vi, ok = _vox_lookup(bary_world, lab_affine, labeled.shape)
     out = np.zeros(bary_world.shape[0], int)
     idx = np.where(ok)[0]
     out[idx] = labeled[vi[0][idx], vi[1][idx], vi[2][idx]]
+    return out
+
+
+def mask_select(bary_world, mask, mask_affine):
+    """Boolean per FEM element barycentre (N x 3, world mm) for one binary mask (no winner-take-all)."""
+    vi, ok = _vox_lookup(bary_world, mask_affine, mask.shape)
+    out = np.zeros(bary_world.shape[0], bool)
+    idx = np.where(ok)[0]
+    out[idx] = mask[vi[0][idx], vi[1][idx], vi[2][idx]]
     return out

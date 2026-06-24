@@ -9,7 +9,6 @@ charm mesh (E-field) space:
   Ctx lobes x4    roi_Ctx_{Frontal,Parietal,Temporal,Occipital}   (Desikan grouped to lobes)
   WM lobes x4     roi_WM_{Frontal,Parietal,Temporal,Occipital}    (from the REAL wmparc)
   Corpus callosum roi_CC                                           (aseg CC labels 251-255)
-  Subcortical     roi_{Thalamus,Caudate,Putamen,Pallidum,Accumbens,Hippocampus,Amygdala}_{L,R}  (aseg)
   Brainstem       roi_Mesencephalon, roi_Pons                      (Iglesias 2015 brainstem module)
 plus roi_labels_meshspace.nii.gz and rois.json ({label: name}), the interface consumed from
 registration/freesurfer_rois/ by 04/05, _rois.py, qc_harness.py. Whole-brain GM+WM comes from the
@@ -19,9 +18,9 @@ WM lobes are from the REAL wmparc (3000+idx lh / 4000+idx rh), not nearest-corti
 brainstem is split into MESENCEPHALON (173) / PONS (174) via the Iglesias 2015 module
 (brainstemSsLabels, needs `segmentBS.sh` / recon-all `-brainstem-structures`), not the single aseg
 Brain-Stem (16) which does not match Olsson. The recon-all aparc+aseg also resolves the SimNIBS
-atlas2subject right-hemisphere bug. Fine midbrain nuclei (SNc/SNr/VTA/RN/STN) are NOT
-built here; tier-3 nuclei live in registration/atlas_rois/tier3/ (built by 07), never routed through
-this int-label volume.
+atlas2subject right-hemisphere bug. Subcortical nuclei are NOT built here; the Group 2 deep nuclei
+(basal ganglia, midbrain, STN) live in registration/atlas_rois/nuclei/ (built by 07 from CIT168), never
+routed through this int-label volume.
 
 Method: register recon-all orig.mgz -> charm T1 (FSL FLIRT 6-DOF rigid, same subject), assemble one
 integer ROI-label volume in recon-all space, warp it once to mesh space (nearest-neighbour), split.
@@ -49,22 +48,12 @@ WM_OFFSET = 10                                       # WM lobe ids 11..14
 CC_ID = 21
 CC_LABELS = [251, 252, 253, 254, 255]
 
-# Subcortical structures from the aseg: aseg label -> (ROI id, name). The aseg Brain-Stem (16) is
-# replaced by the Iglesias brainstem split below, so it is dropped from the subcortical block.
-ASEG = {
-    10: (41, "Thalamus_L"),    49: (42, "Thalamus_R"),
-    11: (43, "Caudate_L"),     50: (44, "Caudate_R"),
-    12: (45, "Putamen_L"),     51: (46, "Putamen_R"),
-    13: (47, "Pallidum_L"),    52: (48, "Pallidum_R"),
-    26: (49, "Accumbens_L"),   58: (50, "Accumbens_R"),
-    17: (51, "Hippocampus_L"), 53: (52, "Hippocampus_R"),
-    18: (53, "Amygdala_L"),    54: (54, "Amygdala_R"),
-    16: (55, "Brainstem"),
-}
-ASEG_NO_BS = {k: v for k, v in ASEG.items() if k != 16}
+# Subcortical nuclei are NOT built here: Group 2 (basal ganglia + midbrain + STN) comes from CIT168 via
+# 07_build_nuclei.sh, so all subcortical reporting is atlas-consistent. This builder is Group 1 only:
+# cortical/WM lobes, corpus callosum, and the Iglesias brainstem split.
 
 # Iglesias 2015 brainstem substructures (brainstemSsLabels): Midbrain=173, Pons=174 (Medulla=175,
-# SCP=178 unused). Ids continue after the aseg block.
+# SCP=178 unused).
 BRAINSTEM_SS = {173: (55, "Mesencephalon"), 174: (56, "Pons")}
 
 
@@ -91,9 +80,6 @@ def assemble_labels(aparc_aseg, wmparc, brainstem_ss):
         names[LOBE_ID[lobe] + WM_OFFSET] = f"WM_{lobe}"
     out[np.isin(aparc_aseg, CC_LABELS)] = CC_ID
     names[CC_ID] = "CC"
-    for aseg_lbl, (rid, nm) in ASEG_NO_BS.items():      # subcortical nuclei (aseg)
-        out[aparc_aseg == aseg_lbl] = rid
-        names[rid] = nm
     for ss_lbl, (rid, nm) in BRAINSTEM_SS.items():      # Iglesias brainstem substructures
         out[brainstem_ss == ss_lbl] = rid
         names[rid] = nm
@@ -191,7 +177,7 @@ def main():
         dice = 2 * (warped & charm_gmwm).sum() / (warped.sum() + charm_gmwm.sum())
         print(f"\nReg QC: Dice(recon-all brain, charm GM+WM) = {dice:.3f}  (expect > ~0.85)")
     print(f"\nWrote {len(names)} ROIs + roi_labels_meshspace.nii.gz + rois.json -> {args.outdir} "
-          f"(tier-3 nuclei built separately by 07).")
+          f"(Group 2 deep nuclei built separately by 07).")
 
 
 if __name__ == "__main__":

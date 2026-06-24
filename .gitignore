@@ -44,6 +44,7 @@ state.md
 PROJECT_LAYOUT.md
 docs/specs/
 docs/plans/
+docs/superpowers/
 
 # FSL outputs
 *.log
@@ -84,3 +85,38 @@ config/cohort.json
 # Pilot (FullPD5) - superseded by the cohort; kept locally for reference, not tracked
 pipeline/run_qti_cov.m
 references/
+docs/results-deliverables.md
+
+# Methods/theory writeup - the canonical version lives in the manuscript
+pipeline/conductivity_models_derivation.md
+
+# Internal bibliography
+docs/REFERENCES.md
+
+# Manuscript figure + table generators (the artifacts ship in the paper, not the method)
+analysis/fig1_workflow.py
+analysis/fig2_tensor_divergence.py
+analysis/fig3_field_maps.py
+analysis/fig4_cross_montage.py
+analysis/fig5_mre_specificity.py
+analysis/table1_montages.py
+analysis/table2_to_latex.py
+analysis/table_models.py
+analysis/supp_tables.py
+
+# Figure-only render helpers (imported only by the generators above)
+analysis/_figstyle.py
+analysis/_figsave.py
+analysis/_repsubj.py
+analysis/_montagerender.py
+analysis/_surfrender.py
+
+# Standalone diagnostics (regenerable; outputs already under the ignored analysis/results/)
+analysis/qc_figures.py
+analysis/mesh_qc.py
+analysis/roi_audit.py
+analysis/fa_sigma_diagnostic.py
+
+# Unit tests not wired into the run_subject pipeline gates
+tests/test_cohort_manifest.py
+tests/test_mre_cohort_corr.py

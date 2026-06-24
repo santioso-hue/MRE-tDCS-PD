@@ -106,7 +106,7 @@ evaluated and not adopted under `'vn'`; plain ⟨D⟩ (no FWE) is the `--meanD` 
 
 **Pauli WM, Nili AN, Tyszka JM (2018).** A high-resolution probabilistic in vivo atlas of human subcortical brain nuclei (CIT168).
 *Scientific Data* 5:180063.
-→ **The atlas used for the midbrain ROI** (`06_build_atlas_rois.sh`): CIT168 SNc+SNr+VTA are merged into one SN/VTA mask, warped from MNI152-2009c to subject space. The basal-ganglia ROIs (caudate, putamen, pallidum) come from the HarvardOxford-Subcortical atlas instead. Olsson 2025 also uses CIT168.
+→ **The atlas used for all Group 2 deep nuclei** (`07_build_nuclei.sh`): the basal ganglia (Pu, Ca, NAC, GPe, GPi) and the midbrain/subthalamic nuclei (SNc, SNr, VTA, RN, STN), split left and right, are warped from MNI152-2009c to subject space with overlap-allowed masks. Every subcortical readout comes from this single atlas (the aseg subcortical structures are dropped). Olsson 2025 also uses CIT168.
 
 **Ewert S, Plettig P, Li N, Bhatt M, Bhatt DL, Kühn AA, Volkmann J, Horn A (2018).** Toward defining deep brain stimulation targets in MNI space: A subcortical atlas based on multimodal MRI, histology and structural connectivity.
 *NeuroImage* 170:271–282.
@@ -118,7 +118,7 @@ evaluated and not adopted under `'vn'`; plain ⟨D⟩ (no FWE) is the `--meanD` 
 
 **Olsson C, Nilsson M, Stening EM, Lövdén M, Persson J (2025).** Effects of Parkinson's Disease on Mechanical and Microstructural Properties of the Brain.
 *[Journal TBD - from PMC12351346]*
-→ **The dataset paper.** MRE + MD-dMRI in PD (n=12) vs HC (n=17), Philips Ingenia CX 3T. Key PD findings: SNc/VTA μFA↓, MD↑; NAC FA↓ (d=−1.15, largest effect); temporal/occipital WM softening (MRE). Defines our ROI set and primary scientific context.
+→ **The dataset paper.** MRE + MD-dMRI in PD (n=12) vs HC (n=17), Philips Ingenia CX 3T. Defines our ROI set and primary scientific context (the deep-nuclei microstructure and WM-softening regions it reports).
 
 **Atkinson-Clement C, Pinto S, Eusebio A, Coulon O (2017).** Diffusion tensor imaging in Parkinson's disease: Review and meta-analysis.
 *NeuroImage: Clinical* 16:98–110.
@@ -149,4 +149,146 @@ evaluated and not adopted under `'vn'`; plain ⟨D⟩ (no FWE) is the `--meanD` 
 
 ---
 
-*Last updated: 2026-05-31. Add new references here as the project expands.*
+## QTI / b-tensor Encoding and Kurtosis Bias (Methods 2.2, 2.4)
+
+**Szczepankiewicz F, Sjölund J, Ståhlberg F, Lätt J, Nilsson M (2019).** Tensor-valued diffusion encoding for diffusional variance decomposition (DIVIDE): Technical feasibility in clinical MRI systems.
+*PLoS ONE* 14(3):e0214238.
+→ Linear + spherical b-tensor encoding on clinical scanners; the acquisition basis for the QTI/MD-dMRI model.
+
+**Nilsson M, Szczepankiewicz F, Lampinen B, Ahlgren A, de Almeida Martins JP, Lasič S, Westin CF, Topgaard D (2018).** An open-source framework for analysis of multidimensional diffusion MRI data implemented in MATLAB.
+*Proc. Intl. Soc. Mag. Reson. Med.* 26:5355. [verify abstract number against reference manager]
+→ The `md-dmri` toolbox used for the QTI covariance fit (`run_qti_cov_cohort.m`).
+
+**Veraart J, Poot DHJ, Van Hecke W, Blockx I, Van der Linden A, Verhoye M, Sijbers J (2011).** More accurate estimation of diffusion tensor parameters using diffusion kurtosis imaging.
+*Magnetic Resonance in Medicine* 65(1):138–145.
+→ Single-shell mono-exponential DTI is kurtosis-biased; supports ⟨D⟩ (covariance first cumulant) as a less-biased estimate of the same macroscopic tensor.
+
+**Jensen JH, Helpern JA, Ramani A, Lu H, Kaczynski K (2005).** Diffusional kurtosis imaging: the quantification of non-Gaussian water diffusion by means of magnetic resonance imaging.
+*Magnetic Resonance in Medicine* 53(6):1432–1440.
+→ Defines non-Gaussian (kurtosis) diffusion that biases the single-shell tensor estimate.
+
+**Lampinen B, Szczepankiewicz F, Mårtensson J, van Westen D, Sundgren PC, Nilsson M (2017).** Neurite density imaging versus imaging of microscopic anisotropy in diffusion MRI: A model comparison using spherical tensor encoding.
+*NeuroImage* 147:517–531.
+→ Microscopic anisotropy requires variable b-tensor shape; context for why μFA is not a macroscopic conductivity input.
+
+---
+
+## Registration and Diffusion Preprocessing (Methods 2.5)
+
+**Alexander DC, Pierpaoli C, Basser PJ, Gee JC (2001).** Spatial transformations of diffusion tensor magnetic resonance images.
+*IEEE Transactions on Medical Imaging* 20(11):1131–1139.
+→ Preservation-of-principal-direction (PPD) reorientation: a tensor must be reoriented, not merely resampled, when warped. Basis for the `vecreg` step.
+
+**Jenkinson M, Smith S (2001).** A global optimisation method for robust affine registration of brain images.
+*Medical Image Analysis* 5(2):143–156.
+→ FLIRT affine registration (the 12-DOF dMRI→T1 driver).
+
+**Jenkinson M, Beckmann CF, Behrens TEJ, Woolrich MW, Smith SM (2012).** FSL.
+*NeuroImage* 62(2):782–790.
+→ FSL toolbox: dtifit, FLIRT, vecreg, topup, eddy.
+
+**Andersson JLR, Skare S, Ashburner J (2003).** How to correct susceptibility distortions in spin-echo echo-planar images: application to diffusion tensor imaging.
+*NeuroImage* 20(2):870–888.
+→ `topup` susceptibility-distortion correction (applied upstream to the cohort dMRI).
+
+**Andersson JLR, Sotiropoulos SN (2016).** An integrated approach to correction for off-resonance effects and subject movement in diffusion MR imaging.
+*NeuroImage* 125:1063–1078.
+→ `eddy` eddy-current and motion correction (applied upstream).
+
+**Schilling KG, Blaber J, Huo Y, Newton A, Hansen C, Nath V, Shafer AT, Williams O, Resnick SM, Rogers B, Anderson AW, Landman BA (2019).** Synthesized b0 for diffusion distortion correction (Synb0-DisCo).
+*Magnetic Resonance Imaging* 64:62–70.
+→ Synthetic reverse-phase-encode b0 from T1 (the cohort distortion-correction route; the 2020 PLoS ONE companion is the deep-learning validation).
+
+**Arsigny V, Fillard P, Pennec X, Ayache N (2006).** Log-Euclidean metrics for fast and simple calculus on diffusion tensors.
+*Magnetic Resonance in Medicine* 56(2):411–421.
+→ Log-Euclidean tensor interpolation (the gold standard our per-eigenvalue + PPD scheme approximates without tensor swelling).
+
+---
+
+## Head Segmentation and Atlases (Methods 2.3, 2.7)
+
+**Puonti O, Van Leemput K, Saturnino GB, Siebner HR, Madsen KH, Thielscher A (2020).** Accurate and robust whole-head segmentation from magnetic resonance images for individualized head modeling.
+*NeuroImage* 219:117044.
+→ The `charm` head-segmentation pipeline (SimNIBS 4.x) used for the FEM mesh.
+
+**Fischl B (2012).** FreeSurfer.
+*NeuroImage* 62(2):774–781.
+→ FreeSurfer `recon-all` (cortical/WM parcellation; matches Olsson et al. 2025).
+
+**Desikan RS, Ségonne F, Fischl B, et al. (2006).** An automated labeling system for subdividing the human cerebral cortex on MRI scans into gyral based regions of interest.
+*NeuroImage* 31(3):968–980.
+→ Desikan-Killiany atlas; grouped to frontal/parietal/temporal/occipital lobes (Group 1 cross-comparison regions).
+
+**Fischl B, Salat DH, Busa E, et al. (2002).** Whole brain segmentation: automated labeling of neuroanatomical structures in the human brain.
+*Neuron* 33(3):341–355.
+→ FreeSurfer `aseg` subcortical segmentation. No longer the subcortical ROI source: under the regrouped scheme all subcortical readouts come from the CIT168 Group 2 nuclei, not the aseg.
+
+**Iglesias JE, Van Leemput K, Bhatt P, Casillas C, Dutt S, Schuff N, Truran-Sacrey D, Boxer A, Fischl B (2015).** Bayesian segmentation of brainstem structures in MRI.
+*NeuroImage* 113:184–195.
+→ Brainstem substructures; the mesencephalon/pons split (Group 1 cross-comparison regions).
+
+**Avants BB, Tustison NJ, Song G, Cook PA, Klein A, Gee JC (2011).** A reproducible evaluation of ANTs similarity metric performance in brain image registration.
+*NeuroImage* 54(3):2033–2044.
+→ ANTs; the MNI→subject warp for the Group 2 CIT168 nuclei.
+
+---
+
+## Statistics and Scientific Software (Methods 2.8, 2.9)
+
+**Benjamini Y, Hochberg Y (1995).** Controlling the false discovery rate: a practical and powerful approach to multiple testing.
+*Journal of the Royal Statistical Society: Series B* 57(1):289–300.
+→ BH-FDR multiple-comparison control, per montage and per test family.
+
+**Harris CR, Millman KJ, van der Walt SJ, et al. (2020).** Array programming with NumPy.
+*Nature* 585:357–362.
+→ NumPy (all numerical analysis).
+
+**Virtanen P, Gommers R, Oliphant TE, et al. (2020).** SciPy 1.0: fundamental algorithms for scientific computing in Python.
+*Nature Methods* 17:261–272.
+→ SciPy (Wilcoxon signed-rank, Mann-Whitney U, partial-correlation t-test, Spearman).
+
+---
+
+## MRE Mechanics, Aging, and the CSF / Atrophy Confound (Figure 4, Discussion)
+
+All five verified against PubMed (DOIs below).
+
+**Sack I, Beierbach B, Wuerfel J, Klatt D, Hamhaber U, Papazoglou S, Martus P, Braun J (2009).** The impact of aging and gender on brain viscoelasticity.
+*NeuroImage* 46(3):652–657. DOI: 10.1016/j.neuroimage.2009.02.040
+→ Healthy brain stiffness (springpot μ) declines ~0.8%/yr; the structure parameter α is the same springpot exponent as the cohort's `alpha` map. Establishes age as a driver of MRE stiffness.
+
+**Hiscox LV, Johnson CL, Barnhill E, McGarry MDJ, Huston J, van Beek EJR, Starr JM, Roberts N (2016).** Magnetic resonance elastography (MRE) of the human brain: technique, findings and clinical applications.
+*Physics in Medicine and Biology* 61(24):R401–R437. DOI: 10.1088/0031-9155/61/24/R401
+→ MRE methods review and baseline grey/white-matter stiffness (kPa) and loss-tangent values across studies.
+
+**Hiscox LV, Schwarb H, McGarry MDJ, Johnson CL (2021).** Aging brain mechanics: Progress and promise of magnetic resonance elastography.
+*NeuroImage* 232:117889. DOI: 10.1016/j.neuroimage.2021.117889
+→ Review of MRE in healthy aging and neurodegeneration; subcortical/regional softening with age.
+
+**Indahlastari A, Albizu A, O'Shea A, Forbes MA, Nissim NR, Kraft JN, Evangelista ND, Hausman HK, Woods AJ (2020).** Modeling transcranial electrical stimulation in the aging brain.
+*Brain Stimulation* 13(3):664–674. DOI: 10.1016/j.brs.2020.02.007
+→ **Direct support for the Figure 4 confound:** in 587 older adults, computed tES field is inversely correlated with atrophy and the age→current-density relationship is *partially mediated by brain-to-CSF ratio*.
+
+**Unal G, Ficek B, Webster K, Shahabuddin S, Truong D, Hampstead B, Bikson M, Tsapkini K (2020).** Impact of brain atrophy on tDCS and HD-tDCS current flow: a modeling study in three variants of primary progressive aphasia.
+*Neurological Sciences* 41(7):1781–1789. DOI: 10.1007/s10072-019-04229-z
+→ Local atrophy does not, in isolation, predict local E-field; holistic head anatomy drives current flow. Supports the Figure 4 reframing (whole-head/CSF morphology, not local mechanics).
+
+---
+
+## Additional Conductivity and tDCS References
+
+**Rullmann M, Anwander A, Dannhauer M, Warfield SK, Duffy FH, Wolters CH (2009).** EEG source analysis of epileptiform activity using a 1 mm anisotropic hexahedra finite element head model.
+*NeuroImage* 44(2):399–410.
+→ Volume-constrained anisotropic FEM head model; precedent for the `'vn'` mapping (with Güllmar 2010).
+
+**Mosayebi-Samani M, et al. (2025).** [tES brain-anisotropy sensitivity study]
+*Imaging Neuroscience* (SimNIBS group). [verify full author list / pages against reference manager]
+→ Brain anisotropy has a small effect on the tES E-field (scalar-conductivity uncertainty dominates); MREIT weakly sensitive to anisotropy. Same charm/dwi2cond/`'vn'` framework. Cited in `conductivity_models_derivation.md`.
+
+**Deuschl G, Schade-Brittinger C, Krack P, et al. (2006).** A randomized trial of deep-brain stimulation for Parkinson's disease.
+*New England Journal of Medicine* 355(9):896–908.
+→ STN is the principal DBS target in advanced PD; motivates the Group 2 STN E-field readout.
+
+---
+
+*Last updated: 2026-06-22. The Figure 4 / MRE-aging cluster (Sack, Hiscox x2, Indahlastari, Unal) is PubMed-verified with DOIs; entries marked [verify] should be cross-checked in the reference manager. Add new references here as the project expands.*

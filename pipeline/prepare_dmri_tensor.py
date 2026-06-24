@@ -1,19 +1,14 @@
-"""
-prepare_dmri_tensor.py - reconstruct the QTI covariance mean tensor <D> and supporting maps in dMRI
-space, ready for registration to T1. Called by 02_register_dmri_to_T1.sh.
+"""Reconstruct the QTI covariance mean tensor <D> and supporting maps in dMRI space for
+registration to T1. Called by 02_register_dmri_to_T1.sh.
 
-Inputs from run_qti_cov_cohort.m (md-dmri `dtd_covariance` fit, constrained/heteroscedasticity-
-corrected; Westin et al. 2016): qti_cov/cov_mfs.mat (model fit) and cov_dps.mat (derived params).
-<D> is the first cumulant of the QTI signal model (the macroscopic mean diffusion tensor), stored in
-cov_mfs.m(:,:,:,2:7) in Mandel (sqrt2) Voigt order, SI units.
-
-Covariance fit, not the full DTD (de Almeida Martins/Topgaard) Monte-Carlo fit: the cumulant mean
-tensor is the standard QTI estimate, is not magnitude-inflated (MD ~0.97 vs ~1.53 um2/ms for the
-Monte-Carlo mean here), and has a reliable eigenframe (principal axis agrees with a robust low-b DTI
-to ~14 deg in core WM, vs ~40 deg for the Monte-Carlo mean).
+Inputs from run_qti_cov_cohort.m (md-dmri `dtd_covariance` fit; Westin et al. 2016): qti_cov/cov_mfs.mat
+(model fit) and cov_dps.mat (derived params). <D> is the first cumulant of the QTI signal model (the
+macroscopic mean diffusion tensor), in cov_mfs.m(:,:,:,2:7), Mandel (sqrt2) Voigt order, SI units.
+Uses the covariance fit, not the full-DTD Monte-Carlo fit (the cumulant mean is the standard QTI
+estimate; see the manuscript Methods).
 
 Outputs (registration/, dMRI space):
-  s0_dMRI.nii.gz               model S0 (cov_dps.s0); the dMRI->T1 registration driver (matches the upstream ParkMRE pipeline)
+  s0_dMRI.nii.gz               model S0 (cov_dps.s0); the dMRI->T1 registration driver
   tensor_triaxial_dMRI.nii.gz  6-comp <D> [Dxx,Dxy,Dxz,Dyy,Dyz,Dzz], um2/ms (reoriented to T1 by vecreg)
   lam1/lam2/lam3_dMRI.nii.gz   eigenvalues l1>=l2>=l3 (scalar; trilinear -> magnitude, preserves anisotropy)
   v1_dMRI.nii.gz               principal eigenvector cov_dps.u (reoriented to T1; anchors the principal axis)
@@ -22,7 +17,7 @@ Outputs (registration/, dMRI space):
   uFA_dMRI.nii.gz              microscopic FA (post-hoc MRE comparison only; orientation-invariant)
   dMRI_mask.nii.gz             QTI brain mask
 
-Conductivity is sigma proportional to <D> via SimNIBS 'vn' (built in 03): only the eigenvalue RATIOS
+Conductivity is sigma proportional to <D> via SimNIBS 'vn' (built in 03): only the eigenvalue ratios
 and orientation of <D> survive that mapping.
 """
 import os
@@ -78,11 +73,9 @@ l3, l2, l1 = ev[:, 0], ev[:, 1], ev[:, 2]
 trace_md = (mdxx + mdyy + mdzz) / 3.0
 err = np.abs(trace_md[mask] - MD[mask])                     # median (cov.MD is toolbox-clamped in extremes)
 
-# The QTI cumulant mean tensor is degenerate in a minority of voxels: non-positive-definite, or an
-# implausibly low MD (< 0.2 um2/ms, ~8x below real WM) with FA ~ 1, i.e. a failed fit, not real tissue.
-# Anisotropy/orientation cannot be trusted there, so those voxels fall back to ISOTROPIC (l1=l2=l3 ->
-# 'vn' yields the literature sigma0). Real high-anisotropy WM (PD, plausible MD) is kept and capped at
-# 10:1 by SimNIBS like every model. Real tissue (FA<0.5) is ~98% PD; the failures are noise/edge voxels.
+# Degenerate cumulant-mean voxels (non-positive-definite, or implausibly low MD < 0.2 um2/ms with
+# FA ~ 1, i.e. a failed fit not real tissue) fall back to isotropic (l1=l2=l3 -> 'vn' yields the
+# literature sigma0). High-anisotropy WM with plausible MD is kept and capped at 10:1 by SimNIBS.
 md_m = MD[mask]
 degen = (l3 <= 1e-3) | (md_m < 0.2)
 iso = np.clip(md_m, 1e-3, None)
@@ -115,7 +108,7 @@ n = np.linalg.norm(u, axis=-1, keepdims=True)
 save(u / np.where(n > 0.1, n, 1.0), "v1_dMRI.nii.gz")
 
 # --- model S0 (cov_dps.s0): the dMRI->T1 registration driver. Whole-brain T2-like contrast (the
-# signal the upstream ParkMRE pipeline registers off via dtd_s0); far better than FA, which is WM-only and noisy. ---
+# signal the upstream ParkMRE pipeline registers off via dtd_s0), not WM-only like FA. ---
 s0 = np.nan_to_num(np.real(np.asarray(dps.s0)).astype(np.float64)); s0[~mask] = 0.0
 save(s0, "s0_dMRI.nii.gz")
 

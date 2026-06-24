@@ -1,6 +1,11 @@
-"""_stats.py - generic statistics helpers shared by the cohort analysis scripts (06, 09)."""
+"""_stats.py - generic statistics helpers shared by the analysis scripts."""
 import numpy as np
 from scipy import stats
+
+
+def pct_delta(new, ref):
+    """Percent difference of `new` from `ref`; NaN if `ref` is 0 or either input is NaN."""
+    return float("nan") if (ref == 0 or np.isnan(ref) or np.isnan(new)) else 100.0 * (new - ref) / ref
 
 
 def bh_fdr(pvals):

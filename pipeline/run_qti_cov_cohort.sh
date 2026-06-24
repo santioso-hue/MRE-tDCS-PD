@@ -15,4 +15,5 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export PATH="${ELASTIX_BIN:-$HOME/Applications/elastix-5.3.1/bin}:$PATH"   # elastix + transformix for step2 MC
 command -v elastix >/dev/null || { echo "ERROR: elastix not on PATH (needed for step2 inter-series MC)"; exit 1; }
 cd "$REPO"
-/Applications/MATLAB_R2026a.app/bin/matlab -batch "run('pipeline/run_qti_cov_cohort.m')"
+MATLAB_BIN="${MATLAB_BIN:-matlab}"
+"$MATLAB_BIN" -batch "run('pipeline/run_qti_cov_cohort.m')"

@@ -1,19 +1,14 @@
-"""table1_montages.py - Table 1 (electrode montages) for the manuscript Methods 2.6.
-Exposes the 2x2 design: two cortical targets (M1, DLPFC) crossed with two electrode types (conventional
-5x5 cm two-pad, 4x1 HD ring). No redundant montage-ID column: each row is identified by (Target x Type).
-Matches the house style of fig_table2_h1.py (DejaVu Sans, INK/SUB tokens, bold headers, thin booktabs rules,
-faint target-group shading band consistent with the H1 tier shading, no gridlines, explicit-bbox crop).
-Emits PNG, PDF, LaTeX (booktabs + multirow), CSV, and a standalone caption .txt. Values are fixed.
+"""Table 1 (electrode montages): the 2x2 design of two cortical targets (M1, DLPFC) crossed with
+two electrode types (conventional 5x5 cm two-pad, 4x1 HD ring); each row is (Target x Type).
+Emits PNG, PDF, LaTeX (booktabs + multirow), CSV, and a standalone caption .txt.
+The deliverable is the .tex + .csv + caption; the PNG/PDF render is a local preview only.
 """
 import os, csv
-import matplotlib; matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 from matplotlib.transforms import Bbox
-plt.rcParams.update({"font.family": "sans-serif", "font.sans-serif": ["DejaVu Sans"], "mathtext.fontset": "dejavusans"})
+from _figstyle import plt, INK, SUB, BAND
 
 R = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "analysis", "results")
-INK, SUB, BAND = "#1a1a1a", "#5f6368", "#e7e9ec"   # house tokens (fig_table2_h1.py); BAND is the H1 tier shade
 
 # header label + left-x anchor (fraction of the table width). Target is rendered once per group (merged look).
 HEADERS = [("Target", 0.005), ("Type", 0.115), ("Anode", 0.405), ("Return electrode(s)", 0.490), ("Current", 0.700)]
@@ -34,7 +29,7 @@ CAPTION = (
     "cortex, M1; dorsolateral prefrontal cortex, DLPFC) crossed with two electrode types: a conventional "
     "two-pad configuration (5 × 5 cm rectangular pads) and a 4 × 1 high-definition (HD) ring of small disc "
     "electrodes. All montages used an identical head mesh, finite-element solver, and 2 mA total current, "
-    "and the two electrode types at each target share the anode position. Electrode labels are 10–10 EEG "
+    "and the two electrode types at each target share the anode position. Electrode labels are 10-10 EEG "
     "positions. Each pad montage delivers +2 mA at the anode and −2 mA at the single return; each HD montage "
     "delivers +2 mA at the central anode and −0.5 mA at each of four surrounding returns, summing to −2 mA. "
     "The left motor target (C3) is fixed across all subjects so that montage laterality does not confound "
@@ -58,7 +53,7 @@ for target, rows in GROUPS:
     top = y + ROWH * 0.5
     bot = y - ROWH * (len(rows) - 1) - ROWH * 0.5
     ax.add_patch(Rectangle((x0, bot), x1 - x0, top - bot, facecolor=BAND, edgecolor="none",
-                           alpha=0.45, zorder=0))                   # faint target-group band (H1 tier shade)
+                           alpha=0.45, zorder=0))                   # faint target-group band
     ax.text(X(0.005), (top + bot) / 2, target, ha="left", va="center", fontsize=9.5, fontweight="bold", color=INK)
     for row in rows:
         for val, fx in zip(row, DATA_ANCHORS):
@@ -101,4 +96,4 @@ Target & Type & Anode & Return electrode(s) & Current \\
 """.replace("__CAPTION__", CAPTION)
 open(f"{R}/table1_montages.tex", "w").write(tex)
 open(f"{R}/table1_caption.txt", "w").write(CAPTION + "\n")
-print("wrote table1_montages.{png,pdf,tex,csv} + table1_caption.txt (2x2: Target x Type)")
+print("wrote table1_montages.{png,pdf,tex,csv} + table1_caption.txt")

@@ -21,9 +21,8 @@ field across three conductivity models:
 The conductivity mapping (σ ∝ D, volume-normalised; SimNIBS `'vn'`) and everything downstream are
 identical across the two anisotropic models; they differ only in the input diffusion tensor, which
 makes ISO / DTI / MD-dMRI a controlled comparison. The QTI covariance mean tensor ⟨D⟩ is a less
-kurtosis-biased estimate of the same macroscopic tensor than the single-shell DTI tensor. See
-[pipeline/conductivity_models_derivation.md](pipeline/conductivity_models_derivation.md) for the
-theory, the mapping, and limitations.
+kurtosis-biased estimate of the same macroscopic tensor than the single-shell DTI tensor. See the
+manuscript Methods for the theory, the mapping, and limitations.
 
 Regions of interest (cortical and white-matter lobes, corpus callosum, brainstem substructures,
 subcortical nuclei) are derived from a [FreeSurfer](https://surfer.nmr.mgh.harvard.edu/) `recon-all`
@@ -72,7 +71,6 @@ Quality control and the post-hoc MRE comparison:
 ```bash
 simnibs_python analysis/qc_harness.py            # per-subject QC across all stages
 simnibs_python analysis/08_tensor_divergence.py  # DTI vs <D> tensor divergence per ROI (when DTI is wired)
-simnibs_python analysis/qc_figures.py            # |E| overlay + MD-dMRI-minus-DTI difference figures
 bash           pipeline/05_register_mre_to_T1.sh # MRE maps -> T1 (post-hoc)
 ```
 
@@ -82,13 +80,12 @@ bash           pipeline/05_register_mre_to_T1.sh # MRE maps -> T1 (post-hoc)
 config/    config.example.sh (template), cohort.example.json (cohort manifest)
 pipeline/  00_charm, 01_dwi2cond, run_qti_cov_cohort.m + .sh (QTI covariance fit, MATLAB), 02_register_dmri_to_T1,
            03_build_conductivity_tensor, 04_run_simulations, 05_register_mre_to_T1, prepare_dmri_tensor.py
-           (called by 02), _config.py, conductivity_models_derivation.md (methods),
+           (called by 02), _config.py,
            run_subject.sh / run_cohort.sh (per-subject + cohort drivers)
 analysis/  build_rois (recon-all ROIs), _rois / _sims (shared helpers), 04_extract_roi_efield,
            05_mre_efield_comparison, 06_cohort_stats (group stats H1/H3), 08_tensor_divergence (DTI vs <D>),
-           07_build_tier3_nuclei + _build_tier3_labels (CIT168 nuclei), qc_harness (validation / QC gates),
-           qc_figures (PNGs), README.md (analysis DAG)
-docs/      REFERENCES, cluster_runbook, registration_bakeoff/ (registration-method decision record)
+           07_build_nuclei + _build_nuclei_labels (CIT168 nuclei), qc_harness (validation / QC gates),
+           README.md (analysis DAG)
 tests/     unit tests (lobe grouping, cohort stats, qc_harness, tensor divergence) + validate_mean_tensor (per-subject)
 ```
 

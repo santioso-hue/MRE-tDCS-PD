@@ -1,6 +1,6 @@
 """05_mre_efield_comparison.py -- per-ROI comparison: MRE mechanics vs MD-dMRI microstructure vs tDCS E-field.
 
-Two outputs (see pipeline/conductivity_models_derivation.md): (1) consistency QC -- does the subject
+Two outputs (see the manuscript Methods): (1) consistency QC -- does the subject
 reproduce MD vs stiffness negative, uFA vs stiffness positive? (2) relevance map -- does the model's
 E-field impact (dE_model_pct = 100*(E_MD-dMRI - E_DTI)/E_DTI, a local PERCENT difference where the shared
 montage field cancels, so it isolates the conductivity model) land where Olsson flags tissue alteration?
@@ -27,6 +27,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _rois import (load_labeled, sample_volume_medians, sample_tensor_aniso_medians,  # noqa: E402
                    sample_tensor_fa_medians, assign_mesh_labels)
 from _sims import sim_mesh  # noqa: E402  (shared montage-aware mesh lookup)
+from _stats import pct_delta  # noqa: E402
 
 WORK, M2M, REG = cfg["WORK_DIR"], cfg["M2M_DIR"], cfg["REG_DIR"]
 TENSOR = os.path.join(WORK, "tensor_MD_dMRI.nii.gz")
@@ -104,7 +105,7 @@ def extract_subject(gate):
             rows[n][m + "_p95"] = float(np.percentile(ef[sel], 95)) if sel.any() else np.nan
     for r in rows.values():
         if np.isfinite(r.get("E_MDdMRI", np.nan)) and r.get("E_DTI", 0):
-            r["dE_model_pct"] = 100 * (r["E_MDdMRI"] - r["E_DTI"]) / r["E_DTI"]   # PERCENT, not V/m
+            r["dE_model_pct"] = pct_delta(r["E_MDdMRI"], r["E_DTI"])   # PERCENT, not V/m
         # microstructure divergence: uFA (microscopic anisotropy) minus FA(<D>) (macroscopic). Large in
         # crossing/dispersed-fiber voxels, where single-shell DTI FA conflates micro-anisotropy with
         # orientation dispersion. uFA is an EXPLANATION variable here, NOT a conductivity input.
@@ -128,7 +129,7 @@ def extract_subject(gate):
         if m in wb_efield:
             wb[m] = wb_efield[m]
     if np.isfinite(wb.get("E_MDdMRI", np.nan)) and wb.get("E_DTI", 0):
-        wb["dE_model_pct"] = 100 * (wb["E_MDdMRI"] - wb["E_DTI"]) / wb["E_DTI"]
+        wb["dE_model_pct"] = pct_delta(wb["E_MDdMRI"], wb["E_DTI"])
     if np.isfinite(wb.get("uFA", np.nan)) and np.isfinite(wb.get("FA_meanD", np.nan)):
         wb["uFA_minus_FA"] = wb["uFA"] - wb["FA_meanD"]
     rows["WholeBrain"] = wb
@@ -166,10 +167,9 @@ def main():
         ru, nu = corr(a, "stiffness_ung")      # ungated sensitivity
         print(f"  {a+' vs stiffness':<26}{f'rho={rg:+.2f}(n={ng})':>14}{f'rho={ru:+.2f}(n={nu})':>14}")
 
-    # Explanation layer: do the conductivity arms diverge where FA and uFA disagree? Hypothesis -- the arms
-    # diverge (large tensor divergence + nonzero dE_model) in ROIs where single-shell DTI FA and the QTI uFA
-    # disagree most (crossing/dispersed fibers). uFA is the EXPLANATION for where the more-principled <D>
-    # tensor departs from DTI; it is NOT used as a conductivity input.
+    # uFA-FA divergence vs the model effect: do the conductivity models diverge (tensor divergence + nonzero
+    # dE_model) in ROIs where single-shell DTI FA and the QTI uFA disagree most (crossing/dispersed fibers)?
+    # uFA is an explanation variable here, not a conductivity input.
     print("\nExplanation layer (uFA-FA divergence vs the model effect; across ROIs, this subject):")
     for b, lbl in [("dE_model_pct", "dE_model_pct = 100*(E_MD-dMRI - E_DTI)/E_DTI"),
                    ("tdiv_angle", "DTI-vs-<D> V1 angle (08)"),
@@ -177,11 +177,10 @@ def main():
         rho, nn = corr("uFA_minus_FA", b)
         note = "" if nn >= 4 else "  [needs the DTI arm / 08]"
         print(f"  (uFA-FA) vs {lbl:<32}{f'rho={rho:+.2f}(n={nn})':>16}{note}")
-    print("  Expected POSITIVE (arms diverge where uFA>FA = dispersion). A null is reported as-is, not")
-    print("  buried -- it would mean the divergence is not dispersion-driven, which is itself informative.")
+    print("  Expected POSITIVE (models diverge where uFA>FA = dispersion).")
 
-    print("\nGATED is primary (Olsson MRE handling); ungated is the sensitivity. n=1 subject: this is an "
-          "across-region trend, not a statistical result. The cohort runner aggregates this per subject.")
+    print("\nGATED is primary (Olsson MRE handling); ungated is the sensitivity. n=1 subject: across-region "
+          "trend, not a statistical result. The cohort runner aggregates this per subject.")
 
 
 if __name__ == "__main__":
